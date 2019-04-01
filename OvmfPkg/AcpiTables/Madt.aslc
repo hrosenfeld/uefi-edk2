@@ -4,6 +4,7 @@
   This file contains a structure definition for the ACPI 1.0 Multiple APIC
   Description Table (MADT).
 
+  Copyright (c) 2014, Pluribus Networks, Inc.
   Copyright (c) 2008 - 2012, Intel Corporation. All rights reserved.<BR>
   This program and the accompanying materials are
   licensed and made available under the terms and conditions of the BSD License
@@ -18,10 +19,12 @@
 #include <IndustryStandard/Acpi.h>
 #include <Platform.h>
 
+#define EFI_ACPI_OEM_TABLE_ID                      SIGNATURE_64('B','V','M','A','D','T',' ',' ')
+
 //
 // Local APIC address
 //
-#define EFI_ACPI_LOCAL_APIC_ADDRESS 0xFEE00000 // TBD
+#define EFI_ACPI_LOCAL_APIC_ADDRESS 0xFEE00000
 
 //
 // Multiple APIC Flags are defined in AcpiX.0.h
@@ -33,7 +36,7 @@
 // This is where the table layout is modified.
 //
 #define EFI_ACPI_PROCESSOR_LOCAL_APIC_COUNT           1
-#define EFI_ACPI_INTERRUPT_SOURCE_OVERRIDE_COUNT      2
+#define EFI_ACPI_INTERRUPT_SOURCE_OVERRIDE_COUNT      1
 #define EFI_ACPI_IO_APIC_COUNT                        1
 
 //
@@ -103,7 +106,6 @@ EFI_ACPI_1_0_MULTIPLE_APIC_DESCRIPTION_TABLE Madt = {
   //
   // Interrupt Source Override Structure
   //
-
   {
     {
       //
@@ -114,20 +116,8 @@ EFI_ACPI_1_0_MULTIPLE_APIC_DESCRIPTION_TABLE Madt = {
       0x00,                                                     // Bus - ISA
       0x00,                                                     // Source - IRQ0
       0x00000002,                                               // Global System Interrupt - IRQ2
-      0x0000                                                    // Flags - Conforms to specifications of the bus
+      0x0005                                                    // Flags - Conforms to specifications of the bus
     },
-
-    {
-      //
-      // ISO (SCI Active High) Interrupt Source Override Structure
-      //
-      EFI_ACPI_1_0_INTERRUPT_SOURCE_OVERRIDE,                   // Type
-      sizeof (EFI_ACPI_1_0_INTERRUPT_SOURCE_OVERRIDE_STRUCTURE),// Length
-      0x00,                                                     // Bus - ISA
-      0x09,                                                     // Source - IRQ0
-      0x00000009,                                               // Global System Interrupt - IRQ2
-      0x000D                                                    // Flags - Level-tiggered, Active High
-    }
   },
 
   //
@@ -137,7 +127,7 @@ EFI_ACPI_1_0_MULTIPLE_APIC_DESCRIPTION_TABLE Madt = {
     {
       EFI_ACPI_1_0_IO_APIC,                                     // Type
       sizeof (EFI_ACPI_1_0_IO_APIC_STRUCTURE),                  // Length
-      0x02,                                                     // IO APIC ID
+      0x01,                                                     // IO APIC ID
       EFI_ACPI_RESERVED_BYTE,                                   // Reserved
       0xFEC00000,                                               // IO APIC Address (physical)
       0x00000000                                                // Global System Interrupt Base

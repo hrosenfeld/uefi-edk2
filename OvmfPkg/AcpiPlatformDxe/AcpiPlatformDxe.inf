@@ -32,10 +32,7 @@
   BootScript.c
   EntryPoint.c
   PciDecoding.c
-  Qemu.c
-  QemuFwCfgAcpi.c
-  QemuLoader.h
-  Xen.c
+  Bhyve.c
 
 [Packages]
   MdePkg/MdePkg.dec
@@ -52,8 +49,7 @@
   UefiBootServicesTableLib
   UefiDriverEntryPoint
   HobLib
-  QemuFwCfgLib
-  QemuFwCfgS3Lib
+  BhyveFwCtlLib
   MemoryAllocationLib
   BaseLib
   DxeServicesTableLib
@@ -65,7 +61,6 @@
   gEfiPciIoProtocolGuid                         # PROTOCOL SOMETIMES_CONSUMED
 
 [Guids]
-  gEfiXenInfoGuid
   gRootBridgesConnectedEventGroupGuid
 
 [Pcd]

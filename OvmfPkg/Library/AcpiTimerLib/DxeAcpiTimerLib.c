@@ -50,6 +50,9 @@ AcpiTimerLibConstructor (
   //
   HostBridgeDevId = PcdGet16 (PcdOvmfHostBridgePciDevId);
   switch (HostBridgeDevId) {
+    case 0x1275: // BHYVE
+      mAcpiTimerIoAddr = 0x408;
+      return RETURN_SUCCESS;
     case INTEL_82441_DEVICE_ID:
       Pmba = POWER_MGMT_REGISTER_PIIX4 (PIIX4_PMBA);
       break;

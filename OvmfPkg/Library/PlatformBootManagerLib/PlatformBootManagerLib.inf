@@ -29,7 +29,6 @@
 [Sources]
   BdsPlatform.c
   PlatformData.c
-  QemuKernel.c
   BdsPlatform.h
 
 [Packages]
@@ -52,10 +51,6 @@
   DevicePathLib
   PciLib
   NvVarsFileLib
-  QemuFwCfgLib
-  QemuFwCfgS3Lib
-  LoadLinuxLib
-  QemuBootOrderLib
   ReportStatusCodeLib
   UefiLib
   PlatformBmPrintScLib
@@ -80,6 +75,5 @@
   gEfiFirmwareVolume2ProtocolGuid               # PROTOCOL SOMETIMES_CONSUMED
 
 [Guids]
-  gEfiXenInfoGuid
   gEfiEndOfDxeEventGroupGuid
   gRootBridgesConnectedEventGroupGuid

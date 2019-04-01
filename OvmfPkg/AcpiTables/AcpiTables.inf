@@ -4,6 +4,7 @@
 #  ACPI table data and ASL sources required to boot the platform.
 #
 #  Copyright (c) 2008 - 2018, Intel Corporation. All rights reserved.<BR>
+#  Copyright (c) 2014, Pluribus Networks, Inc.^M
 #  This program and the accompanying materials
 #  are licensed and made available under the terms and conditions of the BSD License
 #  which accompanies this distribution.  The full text of the license may be found at
@@ -33,7 +34,9 @@
   Facp.aslc
   Facs.aslc
   Dsdt.asl
-  Ssdt.asl
+  Hpet.aslc
+  Spcr.aslc
+  Mcfg.aslc
 
 [Packages]
   MdePkg/MdePkg.dec

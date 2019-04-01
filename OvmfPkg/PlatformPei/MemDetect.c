@@ -36,7 +36,6 @@ Module Name:
 #include <Library/PeimEntryPoint.h>
 #include <Library/ResourcePublicationLib.h>
 #include <Library/MtrrLib.h>
-#include <Library/QemuFwCfgLib.h>
 
 #include "Platform.h"
 #include "Cmos.h"
@@ -104,109 +103,6 @@ Q35TsegMbytesInitialization (
 }
 
 
-/**
-  Iterate over the RAM entries in QEMU's fw_cfg E820 RAM map that start outside
-  of the 32-bit address range.
-
-  Find the highest exclusive >=4GB RAM address, or produce memory resource
-  descriptor HOBs for RAM entries that start at or above 4GB.
-
-  @param[out] MaxAddress  If MaxAddress is NULL, then ScanOrAdd64BitE820Ram()
-                          produces memory resource descriptor HOBs for RAM
-                          entries that start at or above 4GB.
-
-                          Otherwise, MaxAddress holds the highest exclusive
-                          >=4GB RAM address on output. If QEMU's fw_cfg E820
-                          RAM map contains no RAM entry that starts outside of
-                          the 32-bit address range, then MaxAddress is exactly
-                          4GB on output.
-
-  @retval EFI_SUCCESS         The fw_cfg E820 RAM map was found and processed.
-
-  @retval EFI_PROTOCOL_ERROR  The RAM map was found, but its size wasn't a
-                              whole multiple of sizeof(EFI_E820_ENTRY64). No
-                              RAM entry was processed.
-
-  @return                     Error codes from QemuFwCfgFindFile(). No RAM
-                              entry was processed.
-**/
-STATIC
-EFI_STATUS
-ScanOrAdd64BitE820Ram (
-  OUT UINT64 *MaxAddress OPTIONAL
-  )
-{
-  EFI_STATUS           Status;
-  FIRMWARE_CONFIG_ITEM FwCfgItem;
-  UINTN                FwCfgSize;
-  EFI_E820_ENTRY64     E820Entry;
-  UINTN                Processed;
-
-  Status = QemuFwCfgFindFile ("etc/e820", &FwCfgItem, &FwCfgSize);
-  if (EFI_ERROR (Status)) {
-    return Status;
-  }
-  if (FwCfgSize % sizeof E820Entry != 0) {
-    return EFI_PROTOCOL_ERROR;
-  }
-
-  if (MaxAddress != NULL) {
-    *MaxAddress = BASE_4GB;
-  }
-
-  QemuFwCfgSelectItem (FwCfgItem);
-  for (Processed = 0; Processed < FwCfgSize; Processed += sizeof E820Entry) {
-    QemuFwCfgReadBytes (sizeof E820Entry, &E820Entry);
-    DEBUG ((
-      DEBUG_VERBOSE,
-      "%a: Base=0x%Lx Length=0x%Lx Type=%u\n",
-      __FUNCTION__,
-      E820Entry.BaseAddr,
-      E820Entry.Length,
-      E820Entry.Type
-      ));
-    if (E820Entry.Type == EfiAcpiAddressRangeMemory &&
-        E820Entry.BaseAddr >= BASE_4GB) {
-      if (MaxAddress == NULL) {
-        UINT64 Base;
-        UINT64 End;
-
-        //
-        // Round up the start address, and round down the end address.
-        //
-        Base = ALIGN_VALUE (E820Entry.BaseAddr, (UINT64)EFI_PAGE_SIZE);
-        End = (E820Entry.BaseAddr + E820Entry.Length) &
-              ~(UINT64)EFI_PAGE_MASK;
-        if (Base < End) {
-          AddMemoryRangeHob (Base, End);
-          DEBUG ((
-            DEBUG_VERBOSE,
-            "%a: AddMemoryRangeHob [0x%Lx, 0x%Lx)\n",
-            __FUNCTION__,
-            Base,
-            End
-            ));
-        }
-      } else {
-        UINT64 Candidate;
-
-        Candidate = E820Entry.BaseAddr + E820Entry.Length;
-        if (Candidate > *MaxAddress) {
-          *MaxAddress = Candidate;
-          DEBUG ((
-            DEBUG_VERBOSE,
-            "%a: MaxAddress=0x%Lx\n",
-            __FUNCTION__,
-            *MaxAddress
-            ));
-        }
-      }
-    }
-  }
-  return EFI_SUCCESS;
-}
-
-
 UINT32
 GetSystemMemorySizeBelow4gb (
   VOID
@@ -267,29 +163,9 @@ GetFirstNonAddress (
 {
   UINT64               FirstNonAddress;
   UINT64               Pci64Base, Pci64Size;
-  CHAR8                MbString[7 + 1];
-  EFI_STATUS           Status;
-  FIRMWARE_CONFIG_ITEM FwCfgItem;
-  UINTN                FwCfgSize;
-  UINT64               HotPlugMemoryEnd;
   RETURN_STATUS        PcdStatus;
 
-  //
-  // set FirstNonAddress to suppress incorrect compiler/analyzer warnings
-  //
-  FirstNonAddress = 0;
-
-  //
-  // If QEMU presents an E820 map, then get the highest exclusive >=4GB RAM
-  // address from it. This can express an address >= 4GB+1TB.
-  //
-  // Otherwise, get the flat size of the memory above 4GB from the CMOS (which
-  // can only express a size smaller than 1TB), and add it to 4GB.
-  //
-  Status = ScanOrAdd64BitE820Ram (&FirstNonAddress);
-  if (EFI_ERROR (Status)) {
-    FirstNonAddress = BASE_4GB + GetSystemMemorySizeAbove4gb ();
-  }
+  FirstNonAddress = BASE_4GB + GetSystemMemorySizeAbove4gb ();
 
   //
   // If DXE is 32-bit, then we're done; PciBusDxe will degrade 64-bit MMIO
@@ -308,29 +184,6 @@ GetFirstNonAddress (
   //
   Pci64Size = PcdGet64 (PcdPciMmio64Size);
 
-  //
-  // See if the user specified the number of megabytes for the 64-bit PCI host
-  // aperture. The number of non-NUL characters in MbString allows for
-  // 9,999,999 MB, which is approximately 10 TB.
-  //
-  // As signaled by the "X-" prefix, this knob is experimental, and might go
-  // away at any time.
-  //
-  Status = QemuFwCfgFindFile ("opt/ovmf/X-PciMmio64Mb", &FwCfgItem,
-             &FwCfgSize);
-  if (!EFI_ERROR (Status)) {
-    if (FwCfgSize >= sizeof MbString) {
-      DEBUG ((EFI_D_WARN,
-        "%a: ignoring malformed 64-bit PCI host aperture size from fw_cfg\n",
-        __FUNCTION__));
-    } else {
-      QemuFwCfgSelectItem (FwCfgItem);
-      QemuFwCfgReadBytes (FwCfgSize, MbString);
-      MbString[FwCfgSize] = '\0';
-      Pci64Size = LShiftU64 (AsciiStrDecimalToUint64 (MbString), 20);
-    }
-  }
-
   if (Pci64Size == 0) {
     if (mBootMode != BOOT_ON_S3_RESUME) {
       DEBUG ((EFI_D_INFO, "%a: disabling 64-bit PCI host aperture\n",
@@ -345,24 +198,6 @@ GetFirstNonAddress (
     // below) plays no role for the firmware in this case.
     //
     return FirstNonAddress;
-  }
-
-  //
-  // The "etc/reserved-memory-end" fw_cfg file, when present, contains an
-  // absolute, exclusive end address for the memory hotplug area. This area
-  // starts right at the end of the memory above 4GB. The 64-bit PCI host
-  // aperture must be placed above it.
-  //
-  Status = QemuFwCfgFindFile ("etc/reserved-memory-end", &FwCfgItem,
-             &FwCfgSize);
-  if (!EFI_ERROR (Status) && FwCfgSize == sizeof HotPlugMemoryEnd) {
-    QemuFwCfgSelectItem (FwCfgItem);
-    QemuFwCfgReadBytes (FwCfgSize, &HotPlugMemoryEnd);
-    DEBUG ((DEBUG_VERBOSE, "%a: HotPlugMemoryEnd=0x%Lx\n", __FUNCTION__,
-      HotPlugMemoryEnd));
-
-    ASSERT (HotPlugMemoryEnd >= FirstNonAddress);
-    FirstNonAddress = HotPlugMemoryEnd;
   }
 
   //
@@ -646,13 +481,7 @@ QemuInitializeRam (
       AddMemoryRangeHob (BASE_1MB, LowerMemorySize);
     }
 
-    //
-    // If QEMU presents an E820 map, then create memory HOBs for the >=4GB RAM
-    // entries. Otherwise, create a single memory HOB with the flat >=4GB
-    // memory size read from the CMOS.
-    //
-    Status = ScanOrAdd64BitE820Ram (NULL);
-    if (EFI_ERROR (Status) && UpperMemorySize != 0) {
+    if (UpperMemorySize != 0) {
       AddMemoryBaseSizeHob (BASE_4GB, UpperMemorySize);
     }
   }
@@ -712,11 +541,7 @@ InitializeRamRegions (
   VOID
   )
 {
-  if (!mXen) {
-    QemuInitializeRam ();
-  } else {
-    XenPublishRamRegions ();
-  }
+  QemuInitializeRam ();
 
   if (mS3Supported && mBootMode != BOOT_ON_S3_RESUME) {
     //

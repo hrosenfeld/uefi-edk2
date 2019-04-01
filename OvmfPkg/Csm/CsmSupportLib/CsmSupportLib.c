@@ -15,6 +15,11 @@
 
 #include "CsmSupportLib.h"
 
+VOID
+ShadowSystemTables (
+  VOID
+  );
+
 /**
   The constructor function for the platform CSM support library
 
@@ -32,6 +37,8 @@ CsmSupportLibConstructor (
   LegacyInterruptInstall ();
 
   LegacyBiosPlatformInstall ();
+
+  ShadowSystemTables ();
 
   return EFI_SUCCESS;
 }

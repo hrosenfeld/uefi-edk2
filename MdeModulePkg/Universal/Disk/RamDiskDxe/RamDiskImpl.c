@@ -344,6 +344,8 @@ HiiCreateRamDisk (
   }
 
   if (Size > (UINTN) -1) {
+    // 4k align size for consumption by NFIT drivers
+    Size = (Size + 0xfff) & ~0xfffULL;
     do {
       CreatePopUp (
         EFI_LIGHTGRAY | EFI_BACKGROUND_BLUE,

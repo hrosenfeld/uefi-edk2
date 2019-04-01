@@ -1,5 +1,6 @@
 /*++ @file
 
+Copyright (c) 2015, Nahanni Systems, Inc.
 Copyright (c) 2006 - 2018, Intel Corporation. All rights reserved.<BR>
 Portions copyright (c) 2010 - 2011, Apple Inc. All rights reserved.
 This program and the accompanying materials
@@ -23,17 +24,50 @@ Abstract:
 **/
 
 #include "Gop.h"
+#include <Library/BltLib.h>
 
 
 EFI_EVENT               mGopScreenExitBootServicesEvent;
 
 GOP_MODE_DATA mGopModeData[] = {
-    { 800,  600, 0, 0 },
-    { 640,  480, 0, 0 },
-    { 720,  400, 0, 0 },
-    {1024,  768, 0, 0 },
-    {1280, 1024, 0, 0 }
+    { 1920,  1200, 32, 0 },
+    { 1920,  1080, 32, 0 },
+    { 1600,  1200, 32, 0 },
+    { 1600,  900,  32, 0 },
+    { 1280,  1024, 32, 0 },
+    { 1280,  720,  32, 0 },
+    { 1024,  768,  32, 0 },
+    { 800,   600,  32, 0 },
+    { 640,   480,  32, 0 }
     };
+
+STATIC
+VOID
+BhyveGopCompleteModeInfo (
+  IN  GOP_MODE_DATA  *ModeData,
+  OUT EFI_GRAPHICS_OUTPUT_MODE_INFORMATION  *Info
+  )
+{
+  Info->Version = 0;
+  if (ModeData->ColorDepth == 8) {
+    Info->PixelFormat = PixelBitMask;
+    Info->PixelInformation.RedMask = PIXEL_RED_MASK;
+    Info->PixelInformation.GreenMask = PIXEL_GREEN_MASK;
+    Info->PixelInformation.BlueMask = PIXEL_BLUE_MASK;
+    Info->PixelInformation.ReservedMask = 0;
+  } else if (ModeData->ColorDepth == 24) {
+    Info->PixelFormat = PixelBitMask;
+    Info->PixelInformation.RedMask = PIXEL24_RED_MASK;
+    Info->PixelInformation.GreenMask = PIXEL24_GREEN_MASK;
+    Info->PixelInformation.BlueMask = PIXEL24_BLUE_MASK;
+    Info->PixelInformation.ReservedMask = 0;
+  } else if (ModeData->ColorDepth == 32) {
+    DEBUG ((EFI_D_INFO, "%dx%d PixelBlueGreenRedReserved8BitPerColor\n",
+     ModeData->HorizontalResolution, ModeData->VerticalResolution));
+    Info->PixelFormat = PixelBlueGreenRedReserved8BitPerColor;
+  }
+  Info->PixelsPerScanLine = Info->HorizontalResolution;
+}
 
 
 /**
@@ -62,6 +96,7 @@ EmuGopQuerytMode (
   )
 {
   GOP_PRIVATE_DATA  *Private;
+  GOP_MODE_DATA     *ModeData;
 
   Private = GOP_PRIVATE_DATA_FROM_THIS (This);
 
@@ -76,12 +111,13 @@ EmuGopQuerytMode (
 
   *SizeOfInfo = sizeof (EFI_GRAPHICS_OUTPUT_MODE_INFORMATION);
 
+  ModeData = &Private->ModeData[ModeNumber];
   (*Info)->Version = 0;
-  (*Info)->HorizontalResolution = Private->ModeData[ModeNumber].HorizontalResolution;
-  (*Info)->VerticalResolution   = Private->ModeData[ModeNumber].VerticalResolution;
-  (*Info)->PixelFormat = PixelBltOnly;
+  (*Info)->HorizontalResolution = ModeData->HorizontalResolution;
+  (*Info)->VerticalResolution   = ModeData->VerticalResolution;
+  (*Info)->PixelFormat = PixelBitMask;
   (*Info)->PixelsPerScanLine = (*Info)->HorizontalResolution;
-
+  BhyveGopCompleteModeInfo(ModeData, *Info);
   return EFI_SUCCESS;
 }
 
@@ -106,16 +142,20 @@ EmuGopSetMode (
   IN  UINT32                        ModeNumber
   )
 {
-  EFI_STATUS                      Status;
   GOP_PRIVATE_DATA                *Private;
   GOP_MODE_DATA                   *ModeData;
   EFI_GRAPHICS_OUTPUT_BLT_PIXEL   Fill;
+  EFI_GRAPHICS_OUTPUT_MODE_INFORMATION  *Info;
 
   Private = GOP_PRIVATE_DATA_FROM_THIS (This);
 
   if (ModeNumber >= This->Mode->MaxMode) {
+    // Tell bhyve that we are switching out of vesa
+    BhyveSetGraphicsMode(Private, 0, 0, 0);
     return EFI_UNSUPPORTED;
   }
+
+  DEBUG ((EFI_D_INFO, "BHYVE GopSetMode %d\n", ModeNumber));
 
   ModeData = &Private->ModeData[ModeNumber];
   This->Mode->Mode = ModeNumber;
@@ -123,28 +163,27 @@ EmuGopSetMode (
   Private->GraphicsOutput.Mode->Info->VerticalResolution = ModeData->VerticalResolution;
   Private->GraphicsOutput.Mode->Info->PixelsPerScanLine = ModeData->HorizontalResolution;
 
-  if (Private->HardwareNeedsStarting) {
-    Status = EmuGopStartWindow (
-              Private,
-              ModeData->HorizontalResolution,
-              ModeData->VerticalResolution,
-              ModeData->ColorDepth,
-              ModeData->RefreshRate
-              );
-    if (EFI_ERROR (Status)) {
-      return EFI_DEVICE_ERROR;
-    }
+  Info = This->Mode->Info;
+  BhyveGopCompleteModeInfo(ModeData, Info);
 
-    Private->HardwareNeedsStarting = FALSE;
-  }
+  This->Mode->Info->HorizontalResolution = ModeData->HorizontalResolution;
+  This->Mode->Info->VerticalResolution = ModeData->VerticalResolution;
+  This->Mode->SizeOfInfo = sizeof(EFI_GRAPHICS_OUTPUT_MODE_INFORMATION);
+  This->Mode->FrameBufferBase = Private->GraphicsOutput.Mode->FrameBufferBase;
 
+  /*
+  This->Mode->FrameBufferSize = Info->HorizontalResolution * Info->VerticalResolution
+                                * ((ModeData->ColorDepth + 7) / 8);
+  */
+  This->Mode->FrameBufferSize = Private->FbSize;
+  DEBUG ((EFI_D_INFO, "BHYVE GOP FrameBufferBase: 0x%x, FrameBufferSize: 0x%x\n", This->Mode->FrameBufferBase, This->Mode->FrameBufferSize));
 
-  Status = Private->EmuGraphicsWindow->Size(
-                            Private->EmuGraphicsWindow,
-                            ModeData->HorizontalResolution,
-                            ModeData->VerticalResolution
-                            );
+  BhyveSetGraphicsMode(Private, ModeData->HorizontalResolution, ModeData->VerticalResolution, ModeData->ColorDepth);
 
+  BltLibConfigure (
+    (VOID*)(UINTN) This->Mode->FrameBufferBase,
+    This->Mode->Info
+    );
 
   Fill.Red   = 0;
   Fill.Green = 0;
@@ -201,12 +240,8 @@ EmuGopBlt (
   IN  UINTN                                   Delta         OPTIONAL
   )
 {
-  GOP_PRIVATE_DATA  *Private;
   EFI_TPL           OriginalTPL;
   EFI_STATUS        Status;
-  EMU_GRAPHICS_WINDOWS__BLT_ARGS      GopBltArgs;
-
-  Private = GOP_PRIVATE_DATA_FROM_THIS (This);
 
   if ((UINT32)BltOperation >= EfiGraphicsOutputBltOperationMax) {
     return EFI_INVALID_PARAMETER;
@@ -214,14 +249,6 @@ EmuGopBlt (
 
   if (Width == 0 || Height == 0) {
     return EFI_INVALID_PARAMETER;
-  }
-  //
-  // If Delta is zero, then the entire BltBuffer is being used, so Delta
-  // is the number of bytes in each row of BltBuffer.  Since BltBuffer is Width pixels size,
-  // the number of bytes in each row can be computed.
-  //
-  if (Delta == 0) {
-    Delta = Width * sizeof (EFI_UGA_PIXEL);
   }
 
   //
@@ -231,23 +258,28 @@ EmuGopBlt (
   //
   OriginalTPL = gBS->RaiseTPL (TPL_NOTIFY);
 
-  //
-  // Pack UGA Draw protocol parameters to EMU_GRAPHICS_WINDOWS__BLT_ARGS structure to adapt to
-  // GopBlt() API of Unix UGA IO protocol.
-  //
-  GopBltArgs.DestinationX = DestinationX;
-  GopBltArgs.DestinationY = DestinationY;
-  GopBltArgs.Height       = Height;
-  GopBltArgs.Width        = Width;
-  GopBltArgs.SourceX      = SourceX;
-  GopBltArgs.SourceY      = SourceY;
-  GopBltArgs.Delta        = Delta;
-  Status = Private->EmuGraphicsWindow->Blt (
-                            Private->EmuGraphicsWindow,
-                            (EFI_UGA_PIXEL *)BltBuffer,
-                            (EFI_UGA_BLT_OPERATION)BltOperation,
-                            &GopBltArgs
-                            );
+  switch (BltOperation) {
+  case EfiBltVideoToBltBuffer:
+  case EfiBltBufferToVideo:
+  case EfiBltVideoFill:
+  case EfiBltVideoToVideo:
+    Status = BltLibGopBlt (
+      BltBuffer,
+      BltOperation,
+      SourceX,
+      SourceY,
+      DestinationX,
+      DestinationY,
+      Width,
+      Height,
+      Delta
+      );
+    break;
+
+  default:
+    Status = EFI_INVALID_PARAMETER;
+    ASSERT (FALSE);
+  }
 
   gBS->RestoreTPL (OriginalTPL);
 
@@ -258,62 +290,6 @@ EmuGopBlt (
 //
 // Construction and Destruction functions
 //
-
-EFI_STATUS
-EmuGopSupported (
-  IN  EMU_IO_THUNK_PROTOCOL  *EmuIoThunk
-  )
-{
-  //
-  // Check to see if the IO abstraction represents a device type we support.
-  //
-  // This would be replaced a check of PCI subsystem ID, etc.
-  //
-  if (!CompareGuid (EmuIoThunk->Protocol, &gEmuGraphicsWindowProtocolGuid)) {
-    return EFI_UNSUPPORTED;
-  }
-
-  return EFI_SUCCESS;
-}
-
-
-EFI_STATUS
-EmuGopStartWindow (
-  IN  GOP_PRIVATE_DATA    *Private,
-  IN  UINT32              HorizontalResolution,
-  IN  UINT32              VerticalResolution,
-  IN  UINT32              ColorDepth,
-  IN  UINT32              RefreshRate
-  )
-{
-  EFI_STATUS          Status;
-
-  //
-  // Register to be notified on exit boot services so we can destroy the window.
-  //
-  Status = gBS->CreateEvent (
-                  EVT_SIGNAL_EXIT_BOOT_SERVICES,
-                  TPL_CALLBACK,
-                  ShutdownGopEvent,
-                  Private,
-                  &mGopScreenExitBootServicesEvent
-                  );
-
-  Status = Private->EmuIoThunk->Open (Private->EmuIoThunk);
-  if (!EFI_ERROR (Status)) {
-    Private->EmuGraphicsWindow = Private->EmuIoThunk->Interface;
-
-    // Register callback to support RegisterKeyNotify()
-    Status  = Private->EmuGraphicsWindow->RegisterKeyNotify (
-                                            Private->EmuGraphicsWindow,
-                                            GopPrivateMakeCallbackFunction,
-                                            GopPrivateBreakCallbackFunction,
-                                            Private
-                                            );
-    ASSERT_EFI_ERROR (Status);
-  }
-  return Status;
-}
 
 EFI_STATUS
 EmuGopConstructor (
@@ -338,25 +314,21 @@ EmuGopConstructor (
     return EFI_OUT_OF_RESOURCES;
   }
 
+
+  DEBUG ((EFI_D_INFO, "BHYVE Gop Constructor\n"));
+
   Private->GraphicsOutput.Mode->MaxMode = sizeof(mGopModeData) / sizeof(GOP_MODE_DATA);
   //
   // Till now, we have no idea about the window size.
   //
-  Private->GraphicsOutput.Mode->Mode = GRAPHICS_OUTPUT_INVALIDE_MODE_NUMBER;
+  Private->GraphicsOutput.Mode->Mode = GRAPHICS_OUTPUT_INVALID_MODE_NUMBER;
   Private->GraphicsOutput.Mode->Info->Version = 0;
   Private->GraphicsOutput.Mode->Info->HorizontalResolution = 0;
   Private->GraphicsOutput.Mode->Info->VerticalResolution = 0;
-  Private->GraphicsOutput.Mode->Info->PixelFormat = PixelBltOnly;
+  Private->GraphicsOutput.Mode->Info->PixelFormat = PixelBitMask;
   Private->GraphicsOutput.Mode->SizeOfInfo = sizeof (EFI_GRAPHICS_OUTPUT_MODE_INFORMATION);
-  Private->GraphicsOutput.Mode->FrameBufferBase = (EFI_PHYSICAL_ADDRESS) (UINTN) NULL;
-  Private->GraphicsOutput.Mode->FrameBufferSize = 0;
-
-  Private->HardwareNeedsStarting  = TRUE;
-  Private->EmuGraphicsWindow                  = NULL;
-
-  EmuGopInitializeSimpleTextInForWindow (Private);
-
-  EmuGopInitializeSimplePointerForWindow (Private);
+  Private->GraphicsOutput.Mode->FrameBufferBase = (EFI_PHYSICAL_ADDRESS) Private->FbAddr;
+  Private->GraphicsOutput.Mode->FrameBufferSize = Private->FbSize;
 
   return EFI_SUCCESS;
 }
@@ -368,11 +340,6 @@ EmuGopDestructor (
   GOP_PRIVATE_DATA     *Private
   )
 {
-  if (!Private->HardwareNeedsStarting) {
-    Private->EmuIoThunk->Close (Private->EmuIoThunk);
-    Private->EmuGraphicsWindow = NULL;
-  }
-
   //
   // Free graphics output protocol occupied resource
   //
@@ -381,6 +348,7 @@ EmuGopDestructor (
       FreePool (Private->GraphicsOutput.Mode->Info);
     }
     FreePool (Private->GraphicsOutput.Mode);
+    Private->GraphicsOutput.Mode = NULL;
   }
 
   return EFI_SUCCESS;

@@ -38,8 +38,6 @@
   MemDetect.c
   Platform.c
   Platform.h
-  Xen.c
-  Xen.h
 
 [Packages]
   IntelFrameworkModulePkg/IntelFrameworkModulePkg.dec
@@ -51,7 +49,6 @@
 
 [Guids]
   gEfiMemoryTypeInformationGuid
-  gEfiXenInfoGuid
 
 [LibraryClasses]
   BaseLib
@@ -64,11 +61,10 @@
   PeiServicesLib
   PeiServicesTablePointerLib
   PeimEntryPoint
-  QemuFwCfgLib
-  QemuFwCfgS3Lib
   MtrrLib
   MemEncryptSevLib
   PcdLib
+  LocalApicLib
 
 [Pcd]
   gUefiOvmfPkgTokenSpaceGuid.PcdOvmfPeiMemFvBase

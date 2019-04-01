@@ -43,7 +43,7 @@ ATA_ATAPI_PASS_THRU_INSTANCE gAtaAtapiPassThruInstanceTemplate = {
     //
     // IoAlign
     //
-    sizeof (UINTN)
+    0
   },
   {                   // AtaPassThru
     NULL,
@@ -70,7 +70,7 @@ ATA_ATAPI_PASS_THRU_INSTANCE gAtaAtapiPassThruInstanceTemplate = {
     //
     // IoAlign
     //
-    sizeof (UINTN)
+    0
   },
   {                   // ExtScsiPassThru
     NULL,

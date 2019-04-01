@@ -55,7 +55,6 @@
   PeCoffGetEntryPointLib
   PeCoffExtraActionLib
   ExtractGuidedSectionLib
-  LocalApicLib
 
 [Ppis]
   gEfiTemporaryRamSupportPpiGuid                # PPI ALWAYS_PRODUCED

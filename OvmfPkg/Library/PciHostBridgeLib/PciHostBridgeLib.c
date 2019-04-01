@@ -27,7 +27,6 @@
 #include <Library/MemoryAllocationLib.h>
 #include <Library/PciHostBridgeLib.h>
 #include <Library/PciLib.h>
-#include <Library/QemuFwCfgLib.h>
 #include "PciHostBridge.h"
 
 
@@ -204,8 +203,6 @@ PciHostBridgeGetRootBridges (
   )
 {
   EFI_STATUS           Status;
-  FIRMWARE_CONFIG_ITEM FwCfgItem;
-  UINTN                FwCfgSize;
   UINT64               ExtraRootBridges;
   PCI_ROOT_BRIDGE      *Bridges;
   UINTN                Initialized;
@@ -250,25 +247,7 @@ PciHostBridgeGetRootBridges (
 
   *Count = 0;
 
-  //
-  // QEMU provides the number of extra root buses, shortening the exhaustive
-  // search below. If there is no hint, the feature is missing.
-  //
-  Status = QemuFwCfgFindFile ("etc/extra-pci-roots", &FwCfgItem, &FwCfgSize);
-  if (EFI_ERROR (Status) || FwCfgSize != sizeof ExtraRootBridges) {
-    ExtraRootBridges = 0;
-  } else {
-    QemuFwCfgSelectItem (FwCfgItem);
-    QemuFwCfgReadBytes (FwCfgSize, &ExtraRootBridges);
-
-    if (ExtraRootBridges > PCI_MAX_BUS) {
-      DEBUG ((EFI_D_ERROR, "%a: invalid count of extra root buses (%Lu) "
-        "reported by QEMU\n", __FUNCTION__, ExtraRootBridges));
-      return NULL;
-    }
-    DEBUG ((EFI_D_INFO, "%a: %Lu extra root buses reported by QEMU\n",
-      __FUNCTION__, ExtraRootBridges));
-  }
+  ExtraRootBridges = 0;
 
   //
   // Allocate the "main" root bridge, and any extra root bridges.

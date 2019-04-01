@@ -31,10 +31,7 @@
 [Sources]
   SmbiosPlatformDxe.h
   SmbiosPlatformDxe.c
-  Qemu.c
-
-[Sources.IA32, Sources.X64]
-  X86Xen.c
+  Bhyve.c
 
 [Sources.ARM, Sources.AARCH64]
   ArmXen.c
@@ -51,7 +48,6 @@
   UefiDriverEntryPoint
   DebugLib
   HobLib
-  QemuFwCfgLib
   MemoryAllocationLib
   PcdLib
 
@@ -60,9 +56,6 @@
 
 [Protocols]
   gEfiSmbiosProtocolGuid                      # PROTOCOL ALWAYS_CONSUMED
-
-[Guids]
-  gEfiXenInfoGuid
 
 [Depex]
   gEfiSmbiosProtocolGuid

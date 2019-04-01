@@ -785,6 +785,9 @@ GetPlatformInfo (
 {
   EFI_STATUS                    Status;
   UINTN                         Index;
+  extern EFI_PHYSICAL_ADDRESS   *mMpsTable;
+  extern UINT32                 mMpsTableLength;
+  extern VOID                   FixupMpsTable(UINT32 TablePtr);
 
   switch (Mode) {
     case EfiGetPlatformBinarySystemRom:
@@ -807,7 +810,15 @@ GetPlatformInfo (
 
       return EFI_NOT_FOUND;
     case EfiGetPlatformBinaryOem16Data:
+      return EFI_UNSUPPORTED;
     case EfiGetPlatformBinaryMpTable:
+      if (LegacySegment != 0 && LegacyOffset != 0) {
+	FixupMpsTable(LegacySegment * 16 + LegacyOffset);
+      } else {
+	*Table = mMpsTable;
+	*TableSize = mMpsTableLength;
+      }
+      return EFI_SUCCESS;
     case EfiGetPlatformBinaryOemIntData:
     case EfiGetPlatformBinaryOem32Data:
     case EfiGetPlatformBinaryTpmBinary:

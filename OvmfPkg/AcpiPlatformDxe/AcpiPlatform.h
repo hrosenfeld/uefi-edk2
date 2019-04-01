@@ -44,35 +44,13 @@ InstallAcpiTable (
   OUT  UINTN                         *TableKey
   );
 
-BOOLEAN
-QemuDetected (
-  VOID
-  );
-
 EFI_STATUS
 EFIAPI
-QemuInstallAcpiTable (
+BhyveInstallAcpiTable (
   IN   EFI_ACPI_TABLE_PROTOCOL       *AcpiProtocol,
   IN   VOID                          *AcpiTableBuffer,
   IN   UINTN                         AcpiTableBufferSize,
   OUT  UINTN                         *TableKey
-  );
-
-BOOLEAN
-XenDetected (
-  VOID
-  );
-
-EFI_STATUS
-EFIAPI
-InstallXenTables (
-  IN   EFI_ACPI_TABLE_PROTOCOL       *AcpiProtocol
-  );
-
-EFI_STATUS
-EFIAPI
-InstallQemuFwCfgTables (
-  IN   EFI_ACPI_TABLE_PROTOCOL       *AcpiProtocol
   );
 
 EFI_STATUS

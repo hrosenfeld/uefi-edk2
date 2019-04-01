@@ -36,34 +36,40 @@
   ComponentName.c
   GopScreen.c
   GopDriver.c
-  GopInput.c
   Gop.h
+  VbeShim.c
 
 
 [Packages]
   MdePkg/MdePkg.dec
-  EmulatorPkg/EmulatorPkg.dec
+  OptionRomPkg/OptionRomPkg.dec
+  OvmfPkg/OvmfPkg.dec
+  IntelFrameworkModulePkg/IntelFrameworkModulePkg.dec
+  MdeModulePkg/MdeModulePkg.dec
 
 
 [LibraryClasses]
-  UefiBootServicesTableLib
-  MemoryAllocationLib
-  BaseMemoryLib
-  UefiLib
-  UefiDriverEntryPoint
   BaseLib
+  BaseMemoryLib
+  BltLib
   DebugLib
-  KeyMapLib
-
-
-[Guids]
-  gEfiEventExitBootServicesGuid                # SOMETIMES_CONSUMED  Create Event: EVENT_GROUP_GUID
+  DevicePathLib
+  MemoryAllocationLib
+  PciLib
+  PcdLib
+  PrintLib
+  UefiLib
+  UefiBootServicesTableLib
+  UefiDriverEntryPoint
 
 
 [Protocols]
-  gEfiGraphicsOutputProtocolGuid
-  gEfiSimpleTextInProtocolGuid                  # PROTOCOL BY_START
-  gEfiSimpleTextInputExProtocolGuid             # PROTOCOL BY_START
-  gEfiSimplePointerProtocolGuid                 # PROTOCOL BY_START
-  gEmuIoThunkProtocolGuid                       # PROTOCOL TO_START
-  gEmuGraphicsWindowProtocolGuid                # PROTOCOL TO_START
+  gEfiGraphicsOutputProtocolGuid   # PROTOCOL BY_START
+  gEfiDevicePathProtocolGuid       # PROTOCOL TO_START
+  gEfiPciIoProtocolGuid            # PROTOCOL TO_START
+
+[Pcd]
+  gOptionRomPkgTokenSpaceGuid.PcdDriverSupportedEfiVersion
+  gEfiMdeModulePkgTokenSpaceGuid.PcdVideoHorizontalResolution
+  gEfiMdeModulePkgTokenSpaceGuid.PcdVideoVerticalResolution
+

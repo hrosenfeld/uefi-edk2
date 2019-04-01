@@ -191,6 +191,7 @@ LegacyInterruptInstall (
   //
   HostBridgeDevId = PcdGet16 (PcdOvmfHostBridgePciDevId);
   switch (HostBridgeDevId) {
+    case 0x1275: // BHYVE
     case INTEL_82441_DEVICE_ID:
       mLegacyInterruptDevice = LEGACY_INT_DEV_PIIX4;
       break;

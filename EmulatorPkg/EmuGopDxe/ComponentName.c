@@ -201,50 +201,5 @@ EmuGopComponentNameGetControllerName (
   OUT CHAR16                                          **ControllerName
   )
 {
-  EFI_STATUS                    Status;
-  EFI_GRAPHICS_OUTPUT_PROTOCOL  *GraphicsOutput;
-  GOP_PRIVATE_DATA              *Private;
-
-  //
-  // This is a device driver, so ChildHandle must be NULL.
-  //
-  if (ChildHandle != NULL) {
-    return EFI_UNSUPPORTED;
-  }
-
-  //
-  // Make sure this driver is currently managing ControllerHandle
-  //
-  Status = EfiTestManagedDevice (
-             ControllerHandle,
-             gEmuGopDriverBinding.DriverBindingHandle,
-             &gEmuIoThunkProtocolGuid
-             );
-  if (EFI_ERROR (Status)) {
-    return EFI_UNSUPPORTED;
-  }
-  //
-  // Get our context back
-  //
-  Status = gBS->OpenProtocol (
-                  ControllerHandle,
-                  &gEfiGraphicsOutputProtocolGuid,
-                  (VOID **)&GraphicsOutput,
-                  gEmuGopDriverBinding.DriverBindingHandle,
-                  ControllerHandle,
-                  EFI_OPEN_PROTOCOL_GET_PROTOCOL
-                  );
-  if (EFI_ERROR (Status)) {
-    return EFI_UNSUPPORTED;
-  }
-
-  Private = GOP_PRIVATE_DATA_FROM_THIS (GraphicsOutput);
-
-  return LookupUnicodeString2 (
-           Language,
-           This->SupportedLanguages,
-           Private->ControllerNameTable,
-           ControllerName,
-           (BOOLEAN)(This == &gEmuGopComponentName)
-           );
+  return EFI_UNSUPPORTED;
 }

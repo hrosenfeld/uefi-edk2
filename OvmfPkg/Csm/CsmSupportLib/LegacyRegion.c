@@ -476,6 +476,7 @@ LegacyRegionInit (
   //
   HostBridgeDevId = PcdGet16 (PcdOvmfHostBridgePciDevId);
   switch (HostBridgeDevId) {
+  case 0x1275: // BHYVE
   case INTEL_82441_DEVICE_ID:
     mRegisterValues = mRegisterValues440;
     break;

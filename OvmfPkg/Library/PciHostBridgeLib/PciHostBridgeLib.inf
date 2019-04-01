@@ -46,7 +46,6 @@
   DevicePathLib
   MemoryAllocationLib
   PciLib
-  QemuFwCfgLib
 
 [Pcd]
   gUefiOvmfPkgTokenSpaceGuid.PcdPciIoBase

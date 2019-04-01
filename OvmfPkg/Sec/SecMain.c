@@ -29,7 +29,6 @@
 #include <Library/PeCoffGetEntryPointLib.h>
 #include <Library/PeCoffExtraActionLib.h>
 #include <Library/ExtractGuidedSectionLib.h>
-#include <Library/LocalApicLib.h>
 
 #include <Ppi/TemporaryRamSupport.h>
 
@@ -812,14 +811,6 @@ SecCoreStartupWithStack (
   //
   IoWrite8 (0x21, 0xff);
   IoWrite8 (0xA1, 0xff);
-
-  //
-  // Initialize Local APIC Timer hardware and disable Local APIC Timer
-  // interrupts before initializing the Debug Agent and the debug timer is
-  // enabled.
-  //
-  InitializeApicTimer (0, MAX_UINT32, TRUE, 5);
-  DisableApicTimerInterrupt ();
   
   //
   // Initialize Debug Agent to support source level debug in SEC/PEI phases before memory ready.

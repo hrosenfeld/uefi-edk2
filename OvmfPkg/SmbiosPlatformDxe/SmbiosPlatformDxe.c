@@ -65,6 +65,41 @@ STATIC CONST OVMF_TYPE0 mOvmfDefaultType0 = {
 
 
 /**
+  Validates the SMBIOS entry point structure
+
+  @param  EntryPointStructure  SMBIOS entry point structure
+
+  @retval TRUE   The entry point structure is valid
+  @retval FALSE  The entry point structure is not valid
+
+**/
+BOOLEAN
+IsEntryPointStructureValid (
+  IN SMBIOS_TABLE_ENTRY_POINT  *EntryPointStructure
+  )
+{
+  UINTN                     Index;
+  UINT8                     Length;
+  UINT8                     Checksum;
+  UINT8                     *BytePtr;
+
+  BytePtr = (UINT8*) EntryPointStructure;
+  Length = EntryPointStructure->EntryPointLength;
+  Checksum = 0;
+
+  for (Index = 0; Index < Length; Index++) {
+    Checksum = Checksum + (UINT8) BytePtr[Index];
+  }
+
+  if (Checksum != 0) {
+    return FALSE;
+  } else {
+    return TRUE;
+  }
+}
+
+
+/**
   Get SMBIOS record length.
 
   @param  SmbiosTable   SMBIOS pointer.
@@ -178,7 +213,7 @@ SmbiosTablePublishEntry (
   EFI_STATUS                Status;
   EFI_SMBIOS_PROTOCOL       *Smbios;
   SMBIOS_TABLE_ENTRY_POINT  *EntryPointStructure;
-  UINT8                     *SmbiosTables;
+  UINT8                     *SmbiosTables = NULL;
 
   //
   // Find the SMBIOS protocol
@@ -193,13 +228,11 @@ SmbiosTablePublishEntry (
   }
 
   //
-  // Add Xen or QEMU SMBIOS data if found
+  // Add bhyve SMBIOS data
   //
-  EntryPointStructure = GetXenSmbiosTables ();
+  EntryPointStructure = GetBhyveSmbiosTables ();
   if (EntryPointStructure != NULL) {
     SmbiosTables = (UINT8*)(UINTN)EntryPointStructure->TableAddress;
-  } else {
-    SmbiosTables = GetQemuSmbiosTables ();
   }
 
   if (SmbiosTables != NULL) {

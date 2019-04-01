@@ -13,12 +13,12 @@
 **/
 
 #include "BdsPlatform.h"
-#include <Guid/XenInfo.h>
 #include <Guid/RootBridgesConnectedEventGroup.h>
 #include <Protocol/FirmwareVolume2.h>
 #include <Library/PlatformBmPrintScLib.h>
 #include <Library/Tcg2PhysicalPresenceLib.h>
 
+#include <Protocol/BlockIo.h>
 
 //
 // Global data
@@ -359,7 +359,6 @@ PlatformBootManagerBeforeConsole (
 {
   EFI_HANDLE    Handle;
   EFI_STATUS    Status;
-  RETURN_STATUS PcdStatus;
 
   DEBUG ((EFI_D_INFO, "PlatformBootManagerBeforeConsole\n"));
   InstallDevicePathCallback ();
@@ -381,14 +380,6 @@ PlatformBootManagerBeforeConsole (
   //
   EfiEventGroupSignal (&gEfiEndOfDxeEventGroupGuid);
 
-  if (QemuFwCfgS3Enabled ()) {
-    //
-    // Save the boot script too. Note that this will require us to emit the
-    // DxeSmmReadyToLock event just below, which in turn locks down SMM.
-    //
-    SaveS3BootScript ();
-  }
-
   //
   // Prevent further changes to LockBoxes or SMRAM.
   //
@@ -405,9 +396,6 @@ PlatformBootManagerBeforeConsole (
   EfiBootManagerDispatchDeferredImages ();
 
   PlatformInitializeConsole (gPlatformConsole);
-  PcdStatus = PcdSet16S (PcdPlatformBootTimeOut,
-                GetFrontPageTimeoutFromQemu ());
-  ASSERT_RETURN_ERROR (PcdStatus);
 
   PlatformRegisterOptionsAndKeys ();
 
@@ -606,37 +594,7 @@ PrepareLpcBridgeDevicePath (
   EfiBootManagerUpdateConsoleVariable (ConIn, DevicePath, NULL);
   EfiBootManagerUpdateConsoleVariable (ErrOut, DevicePath, NULL);
 
-  //
-  // Register COM2
-  //
-  DevicePath = TempDevicePath;
-  gPnp16550ComPortDeviceNode.UID = 1;
-
-  DevicePath = AppendDevicePathNode (DevicePath,
-                 (EFI_DEVICE_PATH_PROTOCOL *)&gPnp16550ComPortDeviceNode);
-  DevicePath = AppendDevicePathNode (DevicePath,
-                 (EFI_DEVICE_PATH_PROTOCOL *)&gUartDeviceNode);
-  DevicePath = AppendDevicePathNode (DevicePath,
-                 (EFI_DEVICE_PATH_PROTOCOL *)&gTerminalTypeDeviceNode);
-
-  //
-  // Print Device Path
-  //
-  DevPathStr = ConvertDevicePathToText (DevicePath, FALSE, FALSE);
-  if (DevPathStr != NULL) {
-    DEBUG((
-      EFI_D_INFO,
-      "BdsPlatform.c+%d: COM%d DevPath: %s\n",
-      __LINE__,
-      gPnp16550ComPortDeviceNode.UID + 1,
-      DevPathStr
-      ));
-    FreePool(DevPathStr);
-  }
-
-  EfiBootManagerUpdateConsoleVariable (ConOut, DevicePath, NULL);
-  EfiBootManagerUpdateConsoleVariable (ConIn, DevicePath, NULL);
-  EfiBootManagerUpdateConsoleVariable (ErrOut, DevicePath, NULL);
+  // Don't register COM2 which can be used for DBG instead so keep it clean
 
   return EFI_SUCCESS;
 }
@@ -1113,6 +1071,7 @@ SetPciIntLine (
     // and should match SeaBIOS src/fw/pciinit.c *_pci_slot_get_irq()
     //
     switch (mHostBridgeDevId) {
+      case 0x1275: // BHYVE
       case INTEL_82441_DEVICE_ID:
         Idx -= 1;
         break;
@@ -1189,6 +1148,7 @@ PciAcpiInitialization (
   //
   mHostBridgeDevId = PcdGet16 (PcdOvmfHostBridgePciDevId);
   switch (mHostBridgeDevId) {
+    case 0x1275: // BHYVE
     case INTEL_82441_DEVICE_ID:
       Pmba = POWER_MGMT_REGISTER_PIIX4 (PIIX4_PMBA);
       //
@@ -1231,38 +1191,6 @@ PciAcpiInitialization (
   IoOr16 ((PciRead32 (Pmba) & ~BIT0) + 4, BIT0);
 }
 
-/**
-  This function detects if OVMF is running on Xen.
-
-**/
-STATIC
-BOOLEAN
-XenDetected (
-  VOID
-  )
-{
-  EFI_HOB_GUID_TYPE         *GuidHob;
-  STATIC INTN               FoundHob = -1;
-
-  if (FoundHob == 0) {
-    return FALSE;
-  } else if (FoundHob == 1) {
-    return TRUE;
-  }
-
-  //
-  // See if a XenInfo HOB is available
-  //
-  GuidHob = GetFirstGuidHob (&gEfiXenInfoGuid);
-  if (GuidHob == NULL) {
-    FoundHob = 0;
-    return FALSE;
-  }
-
-  FoundHob = 1;
-  return TRUE;
-}
-
 EFI_STATUS
 EFIAPI
 ConnectRecursivelyIfPciMassStorage (
@@ -1278,8 +1206,7 @@ ConnectRecursivelyIfPciMassStorage (
   //
   // Recognize PCI Mass Storage, and Xen PCI devices
   //
-  if (IS_CLASS1 (PciHeader, PCI_CLASS_MASS_STORAGE) ||
-      (XenDetected() && IS_CLASS2 (PciHeader, 0xFF, 0x80))) {
+  if (IS_CLASS1 (PciHeader, PCI_CLASS_MASS_STORAGE)) {
     DevicePath = NULL;
     Status = gBS->HandleProtocol (
                     Handle,
@@ -1400,7 +1327,6 @@ PlatformBdsConnectSequence (
   )
 {
   UINTN         Index;
-  RETURN_STATUS Status;
 
   DEBUG ((EFI_D_INFO, "PlatformBdsConnectSequence\n"));
 
@@ -1419,14 +1345,11 @@ PlatformBdsConnectSequence (
     Index++;
   }
 
-  Status = ConnectDevicesFromQemu ();
-  if (RETURN_ERROR (Status)) {
-    //
-    // Just use the simple policy to connect all devices
-    //
-    DEBUG ((DEBUG_INFO, "EfiBootManagerConnectAll\n"));
-    EfiBootManagerConnectAll ();
-  }
+  //
+  // Just use the simple policy to connect all devices
+  //
+  DEBUG ((DEBUG_INFO, "EfiBootManagerConnectAll\n"));
+  EfiBootManagerConnectAll ();
 }
 
 /**
@@ -1435,6 +1358,7 @@ PlatformBdsConnectSequence (
   Note that DxeSmmReadyToLock must be signaled after this function returns;
   otherwise the script wouldn't be saved actually.
 **/
+__attribute__((unused))
 STATIC
 VOID
 SaveS3BootScript (
@@ -1492,7 +1416,12 @@ PlatformBootManagerAfterConsole (
     // Try to restore variables from the hard disk early so
     // they can be used for the other BDS connect operations.
     //
-    PlatformBdsRestoreNvVarsFromHardDisk ();
+    /* XXX Calling this causes Keyboard to be removed from ConIn which
+       results in unresponsive guest boot loaders in the GUI. Restore it
+       when we figure out what is needed to get NvVars storage done
+       properly.
+     */
+    /*PlatformBdsRestoreNvVarsFromHardDisk ();*/
   }
 
   //
@@ -1523,11 +1452,6 @@ PlatformBootManagerAfterConsole (
   Tcg2PhysicalPresenceLibProcessRequest (NULL);
 
   //
-  // Process QEMU's -kernel command line option
-  //
-  TryRunningQemuKernel ();
-
-  //
   // Perform some platform specific connect sequence
   //
   PlatformBdsConnectSequence ();
@@ -1542,7 +1466,6 @@ PlatformBootManagerAfterConsole (
     );
 
   RemoveStaleFvFileOptions ();
-  SetBootOrderFromQemu ();
 
   PlatformBmPrintScRegisterHandler ();
 }

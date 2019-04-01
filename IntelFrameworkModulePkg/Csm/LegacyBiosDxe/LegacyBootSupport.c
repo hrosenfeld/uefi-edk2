@@ -862,7 +862,6 @@ GenericLegacyBoot (
   EFI_LEGACY_BIOS_PLATFORM_PROTOCOL *LegacyBiosPlatform;
   UINTN                             CopySize;
   VOID                              *AcpiPtr;
-  HDD_INFO                          *HddInfo;
   HDD_INFO                          *LocalHddInfo;
   UINTN                             Index;
   EFI_COMPATIBILITY16_TABLE         *Legacy16Table;
@@ -892,7 +891,6 @@ GenericLegacyBoot (
 
   Legacy16Table                         = Private->Legacy16Table;
   EfiToLegacy16BootTable                = &Private->IntThunk->EfiToLegacy16BootTable;
-  HddInfo = &EfiToLegacy16BootTable->HddInfo[0];
 
   LegacyBiosPlatform = Private->LegacyBiosPlatform;
 
@@ -1050,7 +1048,6 @@ GenericLegacyBoot (
   // We must build IDE data, if it hasn't been done, before PciShadowRoms
   // to insure EFI drivers are connected.
   //
-  LegacyBiosBuildIdeData (Private, &HddInfo, 1);
   UpdateAllIdentifyDriveData (Private);
 
   //
@@ -1079,14 +1076,6 @@ GenericLegacyBoot (
     BdaPtr    = (UINT32 *) (UINTN)0x46C;
     *BdaPtr   = LocalTime;
   );
-
-  //
-  // Shadow PCI ROMs. We must do this near the end since this will kick
-  // of Native EFI drivers that may be needed to collect info for Legacy16
-  //
-  //  WARNING: PciIo is gone after this call.
-  //
-  PciShadowRoms (Private);
 
   //
   // Shadow PXE base code, BIS etc.
@@ -1121,6 +1110,44 @@ GenericLegacyBoot (
     &BbsCount,
     &LocalBbsTable
     );
+
+  DEBUG ((EFI_D_INFO, "GenericLegacyBoot: bbs count %d\n", BbsCount));
+  {
+    BDA_STRUC              *Bda;
+    UINTN                  Index, Count;
+    EFI_BLOCK_IO_PROTOCOL  *BlockIo;
+
+    // Update Bda disk count based on number of non-cdrom block devices
+    Bda = (BDA_STRUC *) ((UINTN) 0x400);
+
+    Status = gBS->LocateHandleBuffer (
+                   ByProtocol,
+                   &gEfiBlockIoProtocolGuid,
+                   NULL,
+                   &HandleCount,
+                   &HandleBuffer
+                   );
+    if (EFI_ERROR(Status)) {
+      return Status;
+    }
+
+    for (Count = 0, Index = 0; Index < HandleCount; Index++) {
+      Status = gBS->HandleProtocol (
+                     HandleBuffer[Index],
+                     &gEfiBlockIoProtocolGuid,
+                     (VOID **) &BlockIo
+                     );
+      if (EFI_ERROR (Status)) {
+        continue;
+      }
+
+      if (!BlockIo->Media->RemovableMedia)
+        Count++;
+    }
+
+    DEBUG ((EFI_D_INFO, "GenericLegacyBoot: Bda drive count %d\n", Count));
+    Bda->NumberOfDrives = (UINT8) Count;
+  }
 
   DEBUG_CODE (
     PrintPciInterruptRegister ();
@@ -1616,11 +1643,13 @@ EfiMemoryTypeToE820Type (
   )
 {
   switch (Type) {
+  case EfiConventionalMemory:
+    return EfiAcpiAddressRangeMemory;
+
   case EfiLoaderCode:
   case EfiLoaderData:
   case EfiBootServicesCode:
   case EfiBootServicesData:
-  case EfiConventionalMemory:
   //
   // The memory of EfiRuntimeServicesCode and EfiRuntimeServicesData are
   // usable memory for legacy OS, because legacy OS is not aware of EFI runtime concept.
@@ -1629,13 +1658,11 @@ EfiMemoryTypeToE820Type (
   //
   case EfiRuntimeServicesCode:
   case EfiRuntimeServicesData:
-    return EfiAcpiAddressRangeMemory;
+  case EfiACPIReclaimMemory:
+    return EfiAcpiAddressRangeACPI;
 
   case EfiPersistentMemory:
     return EfiAddressRangePersistentMemory;
-
-  case EfiACPIReclaimMemory:
-    return EfiAcpiAddressRangeACPI;
 
   case EfiACPIMemoryNVS:
     return EfiAcpiAddressRangeNVS;
@@ -1816,6 +1843,10 @@ LegacyBiosBuildE820 (
       // Convert memory type to E820 type
       //
       TempType = EfiMemoryTypeToE820Type (EfiEntry->Type);
+      if (EfiEntry->PhysicalStart == 0x00000800000) {
+        // Throw this one on the heap of usable memory.
+        TempType = EfiAcpiAddressRangeMemory;
+      }
 
       if ((E820Table[Index].Type == TempType) && (EfiEntry->PhysicalStart == (E820Table[Index].BaseAddr + E820Table[Index].Length))) {
         //

@@ -86,6 +86,11 @@ UINT32 mEventTable[] = {
   /// waited on with CheckEvent() or WaitForEvent()
   ///
   EVT_TIMER | EVT_NOTIFY_WAIT,
+  ///
+  /// 0x40000200       Runtime event with a notification function that
+  /// is queued when the event is signaled with SignalEvent()
+  ///
+  EVT_RUNTIME | EVT_NOTIFY_SIGNAL,
 };
 
 ///

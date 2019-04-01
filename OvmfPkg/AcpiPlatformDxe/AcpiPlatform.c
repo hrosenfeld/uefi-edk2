@@ -161,11 +161,7 @@ InstallOvmfFvTables (
   CurrentTable = NULL;
   TableHandle  = 0;
 
-  if (QemuDetected ()) {
-    TableInstallFunction = QemuInstallAcpiTable;
-  } else {
-    TableInstallFunction = InstallAcpiTable;
-  }
+  TableInstallFunction = BhyveInstallAcpiTable;
 
   //
   // Locate the firmware volume protocol
@@ -246,15 +242,7 @@ InstallAcpiTables (
 {
   EFI_STATUS                         Status;
 
-  if (XenDetected ()) {
-    Status = InstallXenTables (AcpiTable);
-  } else {
-    Status = InstallQemuFwCfgTables (AcpiTable);
-  }
-
-  if (EFI_ERROR (Status)) {
-    Status = InstallOvmfFvTables (AcpiTable);
-  }
+  Status = InstallOvmfFvTables (AcpiTable);
 
   return Status;
 }

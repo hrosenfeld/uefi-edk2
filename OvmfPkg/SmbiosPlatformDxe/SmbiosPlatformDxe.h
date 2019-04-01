@@ -29,13 +29,13 @@
 
 
 /**
-  Locates the Xen SMBIOS data if it exists
+  Locates the bhyve SMBIOS data if it exists
 
-  @return SMBIOS_TABLE_ENTRY_POINT   Address of Xen SMBIOS data
+  @return SMBIOS_TABLE_ENTRY_POINT   Address of bhyve SMBIOS data
 
 **/
 SMBIOS_TABLE_ENTRY_POINT *
-GetXenSmbiosTables (
+GetBhyveSmbiosTables (
   VOID
   );
 
@@ -49,6 +49,21 @@ GetXenSmbiosTables (
 UINT8 *
 GetQemuSmbiosTables (
   VOID
+  );
+
+
+/**
+  Validates the SMBIOS entry point structure
+
+  @param  EntryPointStructure  SMBIOS entry point structure
+
+  @retval TRUE   The entry point structure is valid
+  @retval FALSE  The entry point structure is not valid
+
+**/
+BOOLEAN
+IsEntryPointStructureValid (
+  IN SMBIOS_TABLE_ENTRY_POINT  *EntryPointStructure
   );
 
 #endif

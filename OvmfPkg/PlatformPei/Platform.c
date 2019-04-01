@@ -31,9 +31,8 @@
 #include <Library/PciLib.h>
 #include <Library/PeimEntryPoint.h>
 #include <Library/PeiServicesLib.h>
-#include <Library/QemuFwCfgLib.h>
-#include <Library/QemuFwCfgS3Lib.h>
 #include <Library/ResourcePublicationLib.h>
+#include <Library/LocalApicLib.h>
 #include <Guid/MemoryTypeInformation.h>
 #include <Ppi/MasterBootMode.h>
 #include <IndustryStandard/Pci22.h>
@@ -179,7 +178,7 @@ MemMapInitialization (
   //
   AddIoMemoryRangeHob (0x0A0000, BASE_1MB);
 
-  if (!mXen) {
+  if (TRUE) {
     UINT32  TopOfLowRam;
     UINT64  PciExBarBase;
     UINT32  PciBase;
@@ -278,69 +277,11 @@ MemMapInitialization (
   ASSERT_RETURN_ERROR (PcdStatus);
 }
 
-EFI_STATUS
-GetNamedFwCfgBoolean (
-  IN  CHAR8   *FwCfgFileName,
-  OUT BOOLEAN *Setting
-  )
-{
-  EFI_STATUS           Status;
-  FIRMWARE_CONFIG_ITEM FwCfgItem;
-  UINTN                FwCfgSize;
-  UINT8                Value[3];
-
-  Status = QemuFwCfgFindFile (FwCfgFileName, &FwCfgItem, &FwCfgSize);
-  if (EFI_ERROR (Status)) {
-    return Status;
-  }
-  if (FwCfgSize > sizeof Value) {
-    return EFI_BAD_BUFFER_SIZE;
-  }
-  QemuFwCfgSelectItem (FwCfgItem);
-  QemuFwCfgReadBytes (FwCfgSize, Value);
-
-  if ((FwCfgSize == 1) ||
-      (FwCfgSize == 2 && Value[1] == '\n') ||
-      (FwCfgSize == 3 && Value[1] == '\r' && Value[2] == '\n')) {
-    switch (Value[0]) {
-      case '0':
-      case 'n':
-      case 'N':
-        *Setting = FALSE;
-        return EFI_SUCCESS;
-
-      case '1':
-      case 'y':
-      case 'Y':
-        *Setting = TRUE;
-        return EFI_SUCCESS;
-
-      default:
-        break;
-    }
-  }
-  return EFI_PROTOCOL_ERROR;
-}
-
-#define UPDATE_BOOLEAN_PCD_FROM_FW_CFG(TokenName)                   \
-          do {                                                      \
-            BOOLEAN       Setting;                                  \
-            RETURN_STATUS PcdStatus;                                \
-                                                                    \
-            if (!EFI_ERROR (GetNamedFwCfgBoolean (                  \
-                              "opt/ovmf/" #TokenName, &Setting))) { \
-              PcdStatus = PcdSetBoolS (TokenName, Setting);         \
-              ASSERT_RETURN_ERROR (PcdStatus);                      \
-            }                                                       \
-          } while (0)
-
 VOID
 NoexecDxeInitialization (
   VOID
   )
 {
-  UPDATE_BOOLEAN_PCD_FROM_FW_CFG (PcdPropertiesTableEnable);
-  UPDATE_BOOLEAN_PCD_FROM_FW_CFG (PcdSetNxForStack);
 }
 
 VOID
@@ -413,6 +354,7 @@ MiscInitialization (
   // Determine platform type and save Host Bridge DID to PCD
   //
   switch (mHostBridgeDevId) {
+    case 0x1275: // BHYVE
     case INTEL_82441_DEVICE_ID:
       PmCmd      = POWER_MGMT_REGISTER_PIIX4 (PCI_COMMAND_OFFSET);
       Pmba       = POWER_MGMT_REGISTER_PIIX4 (PIIX4_PMBA);
@@ -577,11 +519,9 @@ MaxCpuCountInitialization (
   VOID
   )
 {
-  UINT16        ProcessorCount;
+  UINT16        ProcessorCount = 0;
   RETURN_STATUS PcdStatus;
 
-  QemuFwCfgSelectItem (QemuFwCfgItemSmpCpuCount);
-  ProcessorCount = QemuFwCfgRead16 ();
   //
   // If the fw_cfg key or fw_cfg entirely is unavailable, load mMaxCpuCount
   // from the PCD default. No change to PCDs.
@@ -625,22 +565,18 @@ InitializePlatform (
   IN CONST EFI_PEI_SERVICES     **PeiServices
   )
 {
-  EFI_STATUS    Status;
-
   DEBUG ((DEBUG_INFO, "Platform PEIM Loaded\n"));
+
+  //
+  // Initialize Local APIC Timer hardware and disable Local APIC Timer
+  // interrupts before initializing the Debug Agent and the debug timer is
+  // enabled.
+  //
+  InitializeApicTimer (0, MAX_UINT32, TRUE, 5);
+  DisableApicTimerInterrupt ();
 
   DebugDumpCmos ();
 
-  XenDetect ();
-
-  if (QemuFwCfgS3Enabled ()) {
-    DEBUG ((EFI_D_INFO, "S3 support was detected on QEMU\n"));
-    mS3Supported = TRUE;
-    Status = PcdSetBoolS (PcdAcpiS3Enable, TRUE);
-    ASSERT_EFI_ERROR (Status);
-  }
-
-  S3Verification ();
   BootModeInitialization ();
   AddressWidthInitialization ();
   MaxCpuCountInitialization ();
@@ -657,11 +593,6 @@ InitializePlatform (
   PublishPeiMemory ();
 
   InitializeRamRegions ();
-
-  if (mXen) {
-    DEBUG ((EFI_D_INFO, "Xen was detected\n"));
-    InitializeXen ();
-  }
 
   if (mBootMode != BOOT_ON_S3_RESUME) {
     if (!FeaturePcdGet (PcdSmmSmramRequire)) {

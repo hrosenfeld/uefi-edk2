@@ -2831,6 +2831,11 @@ ParseInquiryData (
 {
   ScsiDiskDevice->FixedDevice               = (BOOLEAN) ((ScsiDiskDevice->InquiryData.Rmb == 1) ? 0 : 1);
   ScsiDiskDevice->BlkIoMedia.RemovableMedia = (BOOLEAN) (!ScsiDiskDevice->FixedDevice);
+  switch (ScsiDiskDevice->InquiryData.Peripheral_Type) {
+  case EFI_SCSI_TYPE_CDROM:
+    ScsiDiskDevice->BlkIoMedia.ReadOnly = TRUE;
+    break;
+  }
 }
 
 /**

@@ -14,45 +14,15 @@ WITHOUT WARRANTIES OR REPRESENTATIONS OF ANY KIND, EITHER EXPRESS OR IMPLIED.
 **/
 
 #include "Gop.h"
+#include <IndustryStandard/Acpi.h>
 
-
-EFI_STATUS
-FreeNotifyList (
-  IN OUT LIST_ENTRY           *ListHead
-  )
-/*++
-
-Routine Description:
-
-Arguments:
-
-  ListHead   - The list head
-
-Returns:
-
-  EFI_SUCCESS           - Free the notify list successfully
-  EFI_INVALID_PARAMETER - ListHead is invalid.
-
-**/
-{
-  EMU_GOP_SIMPLE_TEXTIN_EX_NOTIFY *NotifyNode;
-
-  if (ListHead == NULL) {
-    return EFI_INVALID_PARAMETER;
-  }
-  while (!IsListEmpty (ListHead)) {
-    NotifyNode = CR (
-                   ListHead->ForwardLink,
-                   EMU_GOP_SIMPLE_TEXTIN_EX_NOTIFY,
-                   NotifyEntry,
-                   EMU_GOP_SIMPLE_TEXTIN_EX_NOTIFY_SIGNATURE
-                   );
-    RemoveEntryList (ListHead->ForwardLink);
-    gBS->FreePool (NotifyNode);
-  }
-
-  return EFI_SUCCESS;
-}
+STATIC VOID
+BhyveGetGraphicsMode (
+  EFI_PCI_IO_PROTOCOL *PciIo,
+  UINT16              *Width,
+  UINT16              *Height,
+  UINT16              *Depth
+  );
 
 
 /**
@@ -105,16 +75,18 @@ EmuGopDriverBindingSupported (
   IN  EFI_DEVICE_PATH_PROTOCOL        *RemainingDevicePath
   )
 {
-  EFI_STATUS              Status;
-  EMU_IO_THUNK_PROTOCOL   *EmuIoThunk;
+  EFI_STATUS                Status;
+  EFI_PCI_IO_PROTOCOL       *PciIo;
+  PCI_TYPE00                Pci;
+  UINT16                    Width, Height, Depth;
 
   //
   // Open the IO Abstraction(s) needed to perform the supported test
   //
   Status = gBS->OpenProtocol (
                   Handle,
-                  &gEmuIoThunkProtocolGuid,
-                  (VOID **)&EmuIoThunk,
+                  &gEfiPciIoProtocolGuid,
+                  (VOID **) &PciIo,
                   This->DriverBindingHandle,
                   Handle,
                   EFI_OPEN_PROTOCOL_BY_DRIVER
@@ -123,14 +95,39 @@ EmuGopDriverBindingSupported (
     return Status;
   }
 
-  Status = EmuGopSupported (EmuIoThunk);
-
   //
-  // Close the I/O Abstraction(s) used to perform the supported test
+  // See if this is a PCI Framebuffer Controller by looking at the Command register and
+  // Class Code Register
+  //
+  Status = PciIo->Pci.Read (
+                        PciIo,
+                        EfiPciIoWidthUint32,
+                        PCI_BAR_IDX0,
+                        sizeof (Pci) / sizeof (UINT32),
+                        &Pci
+                        );
+  if (EFI_ERROR (Status)) {
+    Status = EFI_UNSUPPORTED;
+    goto Done;
+  }
+
+  Status = EFI_UNSUPPORTED;
+  if (Pci.Hdr.VendorId == 0xFB5D && Pci.Hdr.DeviceId == 0x40FB) {
+    DEBUG((EFI_D_INFO, "BHYVE framebuffer device detected\n"));
+    Status = EFI_SUCCESS;
+
+    BhyveGetGraphicsMode(PciIo, &Width, &Height, &Depth);
+    PcdSet32S (PcdVideoHorizontalResolution, Width);
+    PcdSet32S (PcdVideoVerticalResolution, Height);
+  }
+
+Done:
+  //
+  // Close the PCI I/O Protocol
   //
   gBS->CloseProtocol (
         Handle,
-        &gEmuIoThunkProtocolGuid,
+        &gEfiPciIoProtocolGuid,
         This->DriverBindingHandle,
         Handle
         );
@@ -182,24 +179,10 @@ EmuGopDriverBindingStart (
   IN  EFI_DEVICE_PATH_PROTOCOL        *RemainingDevicePath
   )
 {
-  EMU_IO_THUNK_PROTOCOL   *EmuIoThunk;
-  EFI_STATUS              Status;
+  BHYVE_FBUF_MEMREGS      Memregs;
   GOP_PRIVATE_DATA        *Private;
-
-  //
-  // Grab the protocols we need
-  //
-  Status = gBS->OpenProtocol (
-                  Handle,
-                  &gEmuIoThunkProtocolGuid,
-                  (VOID **)&EmuIoThunk,
-                  This->DriverBindingHandle,
-                  Handle,
-                  EFI_OPEN_PROTOCOL_BY_DRIVER
-                  );
-  if (EFI_ERROR (Status)) {
-    return EFI_UNSUPPORTED;
-  }
+  EFI_STATUS              Status;
+  EFI_ACPI_ADDRESS_SPACE_DESCRIPTOR *MmioDesc;
 
   //
   // Allocate Private context data for SGO inteface.
@@ -213,55 +196,109 @@ EmuGopDriverBindingStart (
   if (EFI_ERROR (Status)) {
     goto Done;
   }
-  //
+
   // Set up context record
   //
   Private->Signature           = GOP_PRIVATE_DATA_SIGNATURE;
   Private->Handle              = Handle;
-  Private->EmuIoThunk          = EmuIoThunk;
-  Private->WindowName          = EmuIoThunk->ConfigString;
   Private->ControllerNameTable = NULL;
 
-  AddUnicodeString (
-    "eng",
-    gEmuGopComponentName.SupportedLanguages,
-    &Private->ControllerNameTable,
-    EmuIoThunk->ConfigString
-    );
-  AddUnicodeString2 (
-    "en",
-    gEmuGopComponentName2.SupportedLanguages,
-    &Private->ControllerNameTable,
-    EmuIoThunk->ConfigString,
-    FALSE
-    );
+  //
+  // Open PCI I/O Protocol
+  //
+  Status = gBS->OpenProtocol (
+                  Handle,
+                  &gEfiPciIoProtocolGuid,
+                  (VOID **) &Private->PciIo,
+                  This->DriverBindingHandle,
+                  Handle,
+                  EFI_OPEN_PROTOCOL_BY_DRIVER
+                  );
+  if (EFI_ERROR (Status)) {
+    goto Done;
+  }
+
+  //
+  // Check if fbuf mmio BAR is present
+  //
+  MmioDesc = NULL;
+  Status = Private->PciIo->GetBarAttributes (
+                      Private->PciIo,
+                      PCI_BAR_IDX0,
+                      NULL,
+                      (VOID**) &MmioDesc
+                      );
+  if (EFI_ERROR (Status) ||
+      MmioDesc->ResType != ACPI_ADDRESS_SPACE_TYPE_MEM) {
+    DEBUG ((EFI_D_INFO, "BHYVE GOP: No mmio bar\n"));
+  } else {
+    DEBUG ((EFI_D_INFO, "BHYVE GOP: Using mmio bar @ 0x%lx\n",
+            MmioDesc->AddrRangeMin));
+    BhyveGetMemregs(Private, &Memregs);
+    Private->FbSize = Memregs.FbSize;
+  }
+  if (MmioDesc != NULL) {
+    FreePool (MmioDesc);
+  }
+  if (EFI_ERROR (Status)) {
+    goto Done;
+  }
+  
+  //
+  // Check if fbuf frame-buffer BAR is present
+  //
+  MmioDesc = NULL;
+  Status = Private->PciIo->GetBarAttributes (
+                      Private->PciIo,
+                      PCI_BAR_IDX1,
+                      NULL,
+                      (VOID**) &MmioDesc
+                      );
+  if (EFI_ERROR (Status) ||
+      MmioDesc->ResType != ACPI_ADDRESS_SPACE_TYPE_MEM) {
+    DEBUG ((EFI_D_INFO, "BHYVE GOP: No frame-buffer bar\n"));
+  } else {
+    DEBUG ((EFI_D_INFO, "BHYVE GOP: Using frame-buffer bar @ 0x%lx\n",
+            MmioDesc->AddrRangeMin));
+    Private->FbAddr = MmioDesc->AddrRangeMin;
+    // XXX assert BAR is >= size
+  }
+
+  if (MmioDesc != NULL) {
+    FreePool (MmioDesc);
+  }
+  if (EFI_ERROR (Status)) {
+    goto Done;
+  }
+
+  DEBUG ((EFI_D_INFO, "BHYVE GOP: Framebuf addr 0x%lx, size %x\n",
+         Private->FbAddr, Private->FbSize));
 
   Status = EmuGopConstructor (Private);
   if (EFI_ERROR (Status)) {
     goto Done;
   }
+
   //
   // Publish the Gop interface to the world
   //
   Status = gBS->InstallMultipleProtocolInterfaces (
                   &Private->Handle,
                   &gEfiGraphicsOutputProtocolGuid,    &Private->GraphicsOutput,
-                  &gEfiSimpleTextInProtocolGuid,      &Private->SimpleTextIn,
-                  &gEfiSimplePointerProtocolGuid,     &Private->SimplePointer,
-                  &gEfiSimpleTextInputExProtocolGuid, &Private->SimpleTextInEx,
                   NULL
                   );
 
+  DEBUG((EFI_D_INFO, "BHYVE framebuffer device started\n"));
+
+  //
+  // Install int10 handler
+  //
+#ifndef CSM_ENABLE
+  InstallVbeShim (L"Framebuffer", Private->FbAddr);
+#endif
+
 Done:
   if (EFI_ERROR (Status)) {
-
-    gBS->CloseProtocol (
-          Handle,
-          &gEmuIoThunkProtocolGuid,
-          This->DriverBindingHandle,
-          Handle
-          );
-
     if (Private != NULL) {
       //
       // On Error Free back private data
@@ -269,13 +306,6 @@ Done:
       if (Private->ControllerNameTable != NULL) {
         FreeUnicodeStringTable (Private->ControllerNameTable);
       }
-      if (Private->SimpleTextIn.WaitForKey != NULL) {
-        gBS->CloseEvent (Private->SimpleTextIn.WaitForKey);
-      }
-      if (Private->SimpleTextInEx.WaitForKeyEx != NULL) {
-        gBS->CloseEvent (Private->SimpleTextInEx.WaitForKeyEx);
-      }
-      FreeNotifyList (&Private->NotifyList);
 
       gBS->FreePool (Private);
     }
@@ -325,6 +355,8 @@ EmuGopDriverBindingStop (
   EFI_STATUS                   Status;
   GOP_PRIVATE_DATA             *Private;
 
+  DEBUG((EFI_D_INFO, "BHYVE framebuffer device stopping\n"));
+
   Status = gBS->OpenProtocol (
                   Handle,
                   &gEfiGraphicsOutputProtocolGuid,
@@ -351,9 +383,6 @@ EmuGopDriverBindingStop (
   Status = gBS->UninstallMultipleProtocolInterfaces (
                   Private->Handle,
                   &gEfiGraphicsOutputProtocolGuid,    &Private->GraphicsOutput,
-                  &gEfiSimpleTextInProtocolGuid,      &Private->SimpleTextIn,
-                  &gEfiSimplePointerProtocolGuid,     &Private->SimplePointer,
-                  &gEfiSimpleTextInputExProtocolGuid, &Private->SimpleTextInEx,
                   NULL
                   );
   if (!EFI_ERROR (Status)) {
@@ -367,23 +396,15 @@ EmuGopDriverBindingStop (
 
     gBS->CloseProtocol (
           Handle,
-          &gEmuIoThunkProtocolGuid,
+          &gEfiPciIoProtocolGuid,
           This->DriverBindingHandle,
-          Handle
+          Private->Handle
           );
 
     //
     // Free our instance data
     //
     FreeUnicodeStringTable (Private->ControllerNameTable);
-
-    Status = gBS->CloseEvent (Private->SimpleTextIn.WaitForKey);
-    ASSERT_EFI_ERROR (Status);
-
-    Status = gBS->CloseEvent (Private->SimpleTextInEx.WaitForKeyEx);
-    ASSERT_EFI_ERROR (Status);
-
-    FreeNotifyList (&Private->NotifyList);
 
     gBS->FreePool (Private);
 
@@ -441,3 +462,87 @@ InitializeEmuGop (
   return Status;
 }
 
+STATIC VOID
+BhyveGetGraphicsMode (
+  EFI_PCI_IO_PROTOCOL *PciIo,
+  UINT16              *Width,
+  UINT16              *Height,
+  UINT16              *Depth
+  )
+{
+  BHYVE_FBUF_MEMREGS BhyveRegs;
+  UINT64       Offset;
+  EFI_STATUS   Status;
+
+
+  Offset = (UINT64)&BhyveRegs.Width - (UINT64)&BhyveRegs;
+
+  Status = PciIo->Mem.Read (
+      PciIo,
+      EfiPciIoWidthUint16,
+      PCI_BAR_IDX0,
+      Offset,
+      3,
+      &BhyveRegs.Width
+      );
+
+  *Width  = BhyveRegs.Width;
+  *Height = BhyveRegs.Height;
+  *Depth  = BhyveRegs.Depth;
+
+  DEBUG ((EFI_D_INFO, "BHYVE Get Graphics Mode: w %d, h %d\n", *Width, *Height));
+
+  ASSERT_EFI_ERROR (Status);
+}
+
+VOID
+BhyveSetGraphicsMode (
+  GOP_PRIVATE_DATA  *Private,
+  UINT16             Width,
+  UINT16             Height,
+  UINT16             Depth
+  )
+{
+  BHYVE_FBUF_MEMREGS BhyveRegs;
+  UINT64       Offset;
+  EFI_STATUS   Status;
+
+  DEBUG ((EFI_D_INFO, "BHYVE Set Graphics Mode: w %d, h %d\n", Width, Height));
+
+  BhyveRegs.Width  = Width;
+  BhyveRegs.Height = Height;
+  BhyveRegs.Depth  = Depth;
+  Offset = (UINT64)&BhyveRegs.Width - (UINT64)&BhyveRegs;
+
+  Status = Private->PciIo->Mem.Write (
+      Private->PciIo,
+      EfiPciIoWidthUint16,
+      PCI_BAR_IDX0,
+      Offset,
+      3,
+      &BhyveRegs.Width
+      );
+  ASSERT_EFI_ERROR (Status);
+}
+
+VOID
+BhyveGetMemregs (
+  GOP_PRIVATE_DATA  *Private,
+  BHYVE_FBUF_MEMREGS *Memregs
+  )
+{
+  EFI_STATUS   Status;
+
+  Status = Private->PciIo->Mem.Read (
+      Private->PciIo,
+      EfiPciIoWidthUint32,
+      PCI_BAR_IDX0,
+      0,
+      3,
+      Memregs
+      );
+  ASSERT_EFI_ERROR (Status);
+
+  DEBUG ((EFI_D_INFO, "BHYVE Get Memregs, size %d width %d height %d\n",
+         Memregs->FbSize, Memregs->Width, Memregs->Height));
+}

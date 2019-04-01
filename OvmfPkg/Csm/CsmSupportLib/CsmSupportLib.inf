@@ -37,6 +37,7 @@
   LegacyPlatform.h
   LegacyRegion.c
   LegacyRegion.h
+  BhyveCsmSupportLib.c
 
 [Packages]
   MdePkg/MdePkg.dec

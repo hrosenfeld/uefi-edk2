@@ -40,8 +40,6 @@
   BaseMemoryLib
   DebugLib
   UefiBootServicesTableLib
-  QemuFwCfgLib
-  QemuFwCfgS3Lib
 
 [Protocols]
   gEfiLockBoxProtocolGuid    ## SOMETIMES_PRODUCES

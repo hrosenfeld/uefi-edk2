@@ -1084,9 +1084,7 @@ GenericLegacyBoot (
   //
   //  WARNING: PciIo is gone after this call.
   //
-#ifdef NOT_BHYVE
   PciShadowRoms (Private);
-#endif
 
   //
   // Shadow PXE base code, BIS etc.

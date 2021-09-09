@@ -15,6 +15,7 @@
 #include <Uefi.h>
 
 #include "BhyveCsm16.h"
+#include "Debug.h"
 
 #define MAX_DEBUG_MESSAGE_LENGTH  256
 
@@ -32,7 +33,7 @@
 #define ARGUMENT_REVERSED     BIT12
 #define COUNT_ONLY_NO_PRINT   BIT13
 
-UINTN DebugLevel = 1;
+UINTN DebugLevel = DBG_WARN;
 
 //
 // Record date and time information
@@ -906,7 +907,7 @@ DebugPrint (
   VA_END (Marker);
 
   for (Ptr = (UINT8 *) Buffer; *Ptr; Ptr++) {
-    IoWrite32 (DEBUG_PORT, *Ptr);
+    IoWrite8 (DEBUG_PORT, *Ptr);
   }
 }
 #endif

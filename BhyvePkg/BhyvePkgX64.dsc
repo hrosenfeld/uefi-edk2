@@ -20,7 +20,7 @@
 [Defines]
   PLATFORM_NAME                  = Bhyve
   PLATFORM_GUID                  = 562b76ee-ceb2-4f4f-adfe-a4c8dc46e4ff
-  PLATFORM_VERSION               = 0.1
+  PLATFORM_VERSION               = 0.3
   DSC_SPECIFICATION              = 0x00010005
   OUTPUT_DIRECTORY               = Build/BhyveX64
   SUPPORTED_ARCHITECTURES        = X64
@@ -324,6 +324,10 @@
 
   gEfiMdeModulePkgTokenSpaceGuid.PcdFirmwareVendor|L"BHYVE"
 
+!ifdef $(CSM_ENABLE)
+  gEfiIntelFrameworkModulePkgTokenSpaceGuid.PcdBiosVideoCheckVbeEnable|FALSE  
+!endif
+
 ################################################################################
 #
 # Pcd Dynamic Section - list of all EDK II PCD Entries defined by this Platform
@@ -453,10 +457,12 @@
     <LibraryClasses>
       PcdLib|MdePkg/Library/DxePcdLib/DxePcdLib.inf
   }
+!ifndef $(CSM_ENABLE)
   MdeModulePkg/Universal/Console/GraphicsConsoleDxe/GraphicsConsoleDxe.inf {
     <LibraryClasses>
       PcdLib|MdePkg/Library/DxePcdLib/DxePcdLib.inf
   }
+!endif
   MdeModulePkg/Universal/Console/TerminalDxe/TerminalDxe.inf {
     <LibraryClasses>
       PcdLib|MdePkg/Library/DxePcdLib/DxePcdLib.inf
@@ -481,11 +487,13 @@
   MdeModulePkg/Universal/DisplayEngineDxe/DisplayEngineDxe.inf
   MdeModulePkg/Universal/MemoryTest/NullMemoryTestDxe/NullMemoryTestDxe.inf
 
+!ifndef $(CSM_ENABLE)
   BhyvePkg/BhyveGopDxe/BhyveGopDxe.inf {
     <LibraryClasses>
       BltLib|OptionRomPkg/Library/FrameBufferBltLib/FrameBufferBltLib.inf
       PcdLib|MdePkg/Library/DxePcdLib/DxePcdLib.inf
   }
+!endif
 
   #
   # ISA Support

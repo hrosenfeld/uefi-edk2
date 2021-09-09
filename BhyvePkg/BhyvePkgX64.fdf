@@ -284,7 +284,9 @@ INF  MdeModulePkg/Universal/MonotonicCounterRuntimeDxe/MonotonicCounterRuntimeDx
 INF  MdeModulePkg/Universal/CapsuleRuntimeDxe/CapsuleRuntimeDxe.inf
 INF  MdeModulePkg/Universal/Console/ConPlatformDxe/ConPlatformDxe.inf
 INF  MdeModulePkg/Universal/Console/ConSplitterDxe/ConSplitterDxe.inf
+!ifndef $(CSM_ENABLE)
 INF  MdeModulePkg/Universal/Console/GraphicsConsoleDxe/GraphicsConsoleDxe.inf
+!endif
 INF  MdeModulePkg/Universal/Console/TerminalDxe/TerminalDxe.inf
 INF  IntelFrameworkModulePkg/Universal/BdsDxe/BdsDxe.inf
 INF  MdeModulePkg/Universal/DevicePathDxe/DevicePathDxe.inf
@@ -382,7 +384,9 @@ INF  IntelFrameworkModulePkg/Csm/LegacyBiosDxe/LegacyBiosDxe.inf
 INF  RuleOverride=CSM BhyvePkg/Csm/BhyveCsm16/BhyveCsm16.inf
 !endif
 
+!ifndef $(CSM_ENABLE)
 INF  BhyvePkg/BhyveGopDxe/BhyveGopDxe.inf
+!endif
 
 
 ################################################################################

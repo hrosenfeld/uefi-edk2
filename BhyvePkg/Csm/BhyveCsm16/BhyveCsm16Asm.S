@@ -61,7 +61,7 @@ IVT:    .word   InterruptVectorEntry0x00 - IVT, 0xf000  /* 0x00 */
         .word   InterruptVectorEntry0x0d - IVT, 0xf000  /* 0x0d */
         .word   InterruptVectorEntry0x0e - IVT, 0xf000  /* 0x0e */
         .word   InterruptVectorEntry0x0f - IVT, 0xf000  /* 0x0f */
-        .word   InterruptVectorEntry0x10 - IVT, 0xf000  /* 0x10 */
+        .word   InterruptVectorEntryNop - IVT, 0xf000   /* 0x10 */
         .word   InterruptVectorEntry0x11 - IVT, 0xf000  /* 0x11 */
         .word   InterruptVectorEntry0x12 - IVT, 0xf000  /* 0x12 */
         .word   InterruptVectorEntry0x13 - IVT, 0xf000  /* 0x13 */
@@ -783,8 +783,29 @@ LongToReal:
         .code64
 .global JumpLongModeToRealMode
 JumpLongModeToRealMode:
+        pushq   %rbp
+        push    mStack
+        mov     %esp, mStack
         movzx   %di, %rsp
         jmp     LongToReal
+
+        .code16
+.global ReturnFromRealMode
+ReturnFromRealMode:
+ data32 push    $(1f)
+        jmp     RealToLong
+1:
+        .code64
+        mov     mStack, %esp
+        pop     mStack
+        popq    %rbp
+        ret
+
+	.code16
+.global Interrupt0x10
+Interrupt0x10:
+        int     $0x10
+        ret
 
         .code64
 InterruptVectorNop:
@@ -816,6 +837,7 @@ InterruptVectorEntry0x07:
         data32 push     $(InterruptVector0x07)
         jmp     RealToLong
 InterruptVectorEntry0x08:
+        int     $(0x1c)
         data32 push     $(InterruptVector0x08)
         jmp     RealToLong
 InterruptVectorEntry0x09:
@@ -839,9 +861,6 @@ InterruptVectorEntry0x0e:
 InterruptVectorEntry0x0f:
         data32 push     $(InterruptVector0x0f)
         jmp     RealToLong
-InterruptVectorEntry0x10:
-        data32 push     $(InterruptVector0x10)
-        jmp     RealToLong
 InterruptVectorEntry0x11:
         data32 push     $(InterruptVector0x11)
         jmp     RealToLong
@@ -861,6 +880,7 @@ InterruptVectorEntry0x1a:
         data32 push     $(InterruptVector0x1a)
         jmp     RealToLong
 InterruptVectorEntry0x40:
+        int     $(0x1c)
         data32 push     $(InterruptVector0x08)
         jmp     RealToLong
 InterruptVectorEntry0x41:

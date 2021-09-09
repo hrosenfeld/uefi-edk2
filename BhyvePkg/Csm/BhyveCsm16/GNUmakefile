@@ -37,10 +37,8 @@ OBJECTS    = Bin/BhyveCsm16Asm.o \
              Bin/Mmu.o \
              Bin/Printf.o \
              Bin/String.o \
-             Bin/Video.o \
-             Bin/ter-u16n-IBM-CP437.o
 
-DEBUG_PORT = -DDEBUG_PORT=0x220
+DEBUG_PORT = -DDEBUG_PORT=0x2F8 # COM2
 
 BUILD_DATE = \"$(shell date +%D)\"
 
@@ -50,9 +48,6 @@ all: init Bin/BhyveCsm16.bin
 
 init:
 	@$(MKDIR) Bin
-
-Bin/%.c: %.bdf
-	awk -f bdf_to_c.awk $< > $@
 
 Bin/%.o: %.c
 	$(CC) $(CFLAGS) $(CPPFLAGS) -c -o $@ $<

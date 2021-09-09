@@ -1624,6 +1624,10 @@ PciShadowRoms (
       break;
     }
   }
+#ifndef NOT_BHYVE
+  /* We only want VGA for bhyve. */
+  HandleCount = 1;
+#endif
   //
   // Allocate memory to save Command WORD from each device. We do this
   // to restore devices to same state as EFI after switching to legacy.

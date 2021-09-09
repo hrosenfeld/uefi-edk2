@@ -152,7 +152,7 @@ ZeroMem (
   )
 {
   do {
-    ((UINT16*)Buffer)[--Length] = 0;
+    ((UINT8*)Buffer)[--Length] = 0;
   } while (Length != 0);
   return Buffer;
 }

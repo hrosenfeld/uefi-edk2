@@ -16,7 +16,7 @@
   DEC_SPECIFICATION              = 0x00010005
   PACKAGE_NAME                   = BhyvePkg
   PACKAGE_GUID                   = a68f96c3-6040-11e4-83ce-4437e6b8ac70
-  PACKAGE_VERSION                = 0.1
+  PACKAGE_VERSION                = 0.3
 
 [Includes]
   Include
@@ -43,7 +43,7 @@
 
   ## This flag is used to control the destination port for PlatformDebugLibIoPort
   #gUefiBhyvePkgTokenSpaceGuid.PcdDebugIoPort|0x220|UINT16|4
-  gUefiBhyvePkgTokenSpaceGuid.PcdDebugIoPort|0x2F8|UINT16|4
+  gUefiBhyvePkgTokenSpaceGuid.PcdDebugIoPort|0x3F8|UINT16|4
 
   ## This flag determines the Power Management Base Address of choice, written
   #  to PIIX4 function 3 offset 0x40-0x43 bits [15:6].

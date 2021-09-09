@@ -33,8 +33,15 @@
 #include "String.h"
 #include "Video.h"
 
+#define SEGMENT(addr) ((UINT16)(((UINTN)(addr) >> 16) << 12))
+#define OFFSET(addr) ((UINT16)(UINTN)(addr))
+
 #define SIGNATURE_16(A, B)        ((A) | (B << 8))
 #define SIGNATURE_32(A, B, C, D)  (SIGNATURE_16 (A, B) | (SIGNATURE_16 (C, D) << 16))
+#define BIOS_SEGMENT 0xf000
+#define OPROM_INIT 0x3
+
+STATIC UINT8 RealModeStack[0x1000];
 
 EFI_SYSTEM_TABLE      *gST;
 EFI_BOOT_SERVICES     *gBS;
@@ -77,6 +84,7 @@ Loop(VOID)
 
 extern VOID X64InterruptVectorEntry0x40(VOID);
 extern VOID X64InterruptVectorEntry0x41(VOID);
+extern VOID Interrupt0x10(VOID);
 
 #if 0
 #include "FakeIdt.h" // XXX Test Idts
@@ -169,6 +177,7 @@ CsmLegacy16UpdateBbs(EFI_IA32_REGISTER_SET *Regs)
 }
 
 extern VOID JumpLongModeToRealMode(UINT16 Stack);
+extern VOID ReturnFromRealMode(VOID);
 
 //
 // Extract INT32 from char array
@@ -197,9 +206,18 @@ BDA                    *mBdaPtr = (BDA *)(UINTN)0x400;
 VOID
 EnterRealMode(EFI_IA32_REGISTER_SET *Regs, UINT16 Segment, UINT16 Offset)
 {
+  VOID  *Base;
+  VOID  *ReturnRegs;
   VOID  *Stack;
 
   Stack = (VOID *)(0x2000 - 0x8);
+  Base = Stack;
+
+  Stack -= 2;
+  *(UINT16 *)(Stack) = SEGMENT(ReturnFromRealMode);
+
+  Stack -= 2;
+  *(UINT16 *)(Stack) = OFFSET(ReturnFromRealMode);
 
   Stack -= 2;
   /* EFLAGS image */
@@ -233,6 +251,10 @@ EnterRealMode(EFI_IA32_REGISTER_SET *Regs, UINT16 Segment, UINT16 Offset)
   *(UINT32 *)(Stack) = mPML4;
 
   JumpLongModeToRealMode((UINT16)(UINTN)Stack);
+
+  /* Stack after RealToLong: DestAddr32, OldEbp32, ReturnRegs */
+  ReturnRegs = Base - 2 * sizeof (UINT32) - sizeof (EFI_IA32_REGISTER_SET);
+  CopyMem(Regs, ReturnRegs, sizeof (EFI_IA32_REGISTER_SET));
 }
 
 VOID
@@ -357,6 +379,41 @@ BootMbr(EFI_BLOCK_IO_PROTOCOL *Device)
   EnterRealMode(&Regs, 0, (UINT16)(UINTN)mBootSector);
 }
 
+STATIC
+VOID
+SetVideoMode(UINT8 Mode)
+{
+  UINT8 *Stack = &RealModeStack[sizeof(RealModeStack) - sizeof(UINT16)];
+  EFI_IA32_REGISTER_SET Registers;
+
+  ZeroMem(&Registers, sizeof (EFI_IA32_REGISTER_SET));
+
+  Registers.H.AH = 0x00;
+  Registers.H.AL = Mode;
+  Registers.X.SS = SEGMENT(Stack);
+  Registers.X.SP = OFFSET(Stack);
+
+  EnterRealMode(&Registers, BIOS_SEGMENT, Interrupt0x10);
+}
+
+STATIC
+VOID
+CallVideoBiosOemExtension(UINT8 Type)
+{
+  UINT8 *Stack = &RealModeStack[sizeof(RealModeStack) - sizeof(UINT16)];
+  EFI_IA32_REGISTER_SET Registers;
+
+  ZeroMem(&Registers, sizeof (EFI_IA32_REGISTER_SET));
+
+  Registers.H.AH = 0x4f;
+  Registers.H.AL = 0x14;
+  Registers.H.BL = Type;
+  Registers.X.SS = SEGMENT(Stack);
+  Registers.X.SP = OFFSET(Stack);
+
+  EnterRealMode(&Registers, BIOS_SEGMENT, Interrupt0x10);
+}
+
 EFI_GUID gEfiEventCsmBootGuid = { 0x05253738, 0x5BD2, 0x4311, { 0xB3, 0x8D, 0x8D, 0xE4, 0x64, 0x69, 0x17, 0x10 }};
 EFI_GUID gEfiEventCsmPrepareToBootGuid = { 0X6B145B5F, 0X6E45, 0X4BCC, { 0XAD, 0XDE, 0X31, 0X23, 0X71, 0X7D, 0X27, 0X0C }};
 EFI_EVENT  mCsmPrepareToBootEvent;
@@ -468,6 +525,13 @@ CsmBootEvent (
 
   DisableInterrupts();
 
+  //
+  // RaiseTPL() can enable interrupts.  We don't want that, so neuter it.
+  // Note: 0xc3 is the x86 opcode for "Near return to calling procedure".
+  //
+  *(UINT8 *)gST->BootServices->RaiseTPL = 0xc3;
+  *(UINT8 *)gST->BootServices->RestoreTPL = 0xc3;
+
   Status = gBS->LocateProtocol(&gEfiLegacy8259ProtocolGuid,
                                NULL, (VOID **) &mLegacy8259);
 
@@ -480,7 +544,7 @@ CsmBootEvent (
   //
   // Initialize the VGA
   //
-  VGAInitialize();
+  SetVideoMode(0x03);
 
   //
   // Set the 8259 Master and Slaves base interrupt vectors
@@ -493,12 +557,6 @@ CsmBootEvent (
   mLegacy8259->EnableIrq(mLegacy8259, Efi8259Irq1, TRUE);
 
   Legacy8254SetCount (0xffff);
-
-  //
-  // RaiseTPL() can enable interrupts.  We don't want that, so neuter it.
-  //
-  *(UINT8 *)gST->BootServices->RaiseTPL = 0xc3;
-  *(UINT8 *)gST->BootServices->RestoreTPL = 0xc3;
 
   if (mDeviceBlockIo->Media->RemovableMedia && mDeviceBlockIo->Media->ReadOnly) {
     BootElTorito(mDeviceBlockIo);
@@ -575,9 +633,26 @@ STATIC
 VOID
 CsmLegacy16DispatchOprom(EFI_IA32_REGISTER_SET *Regs)
 {
-  DEBUG (("XXX CsmLegacy16DispatchOprom() Regs->AX = 0x%x, Regs->X.BX = 0x%x, Regs->X.CX = 0x%x, Regs->X.DX = 0x%x\n", Regs->X.AX, Regs->X.BX, Regs->X.CX, Regs->X.DX));
+  UINT8 *Stack = &RealModeStack[sizeof(RealModeStack) - sizeof(UINT16)];
+  EFI_IA32_REGISTER_SET Registers;
+  EFI_DISPATCH_OPROM_TABLE *Table;
 
-  Regs->X.AX = 0;
+  DEBUG (("XXX CsmLegacy16DispatchOprom()\n"));
+
+  Table = (EFI_DISPATCH_OPROM_TABLE *)(UINTN)((Regs->X.ES << 4) + (Regs->X.BX));
+
+  ZeroMem(&Registers, sizeof(Registers));
+  Registers.X.ES = Table->PnPInstallationCheckSegment;
+  Registers.X.DI = Table->PnPInstallationCheckOffset;
+  Registers.H.AH = Table->PciBus;
+  Registers.H.AL = Table->PciDeviceFunction;
+  Registers.X.SS = SEGMENT(Stack);
+  Registers.X.SP = OFFSET(Stack);
+
+  EnterRealMode(&Registers, Table->OpromSegment, OPROM_INIT);
+
+  Regs->X.AX = Registers.X.AX;
+  Regs->X.BX = 0;
 }
 
 STATIC
@@ -678,7 +753,13 @@ InterruptVector0x05(EFI_IA32_REGISTER_SET *Regs)
 VOID
 InterruptVector0x06(EFI_IA32_REGISTER_SET *Regs)
 {
-  DEBUG (("XXX InterruptVector0x06()\n"));
+  UINT16 *Stack = (UINT16*)(UINTN)((Regs->X.SS << 4) + Regs->X.BP);
+
+  DEBUG (("XXX Invalid Opcode Exception!\n"));
+  DEBUG (("XXX CS: 0x%04x\n", Stack[1]));
+  DEBUG (("XXX IP: 0x%04x\n", Stack[0]));
+
+  for (;;);
 }
 
 VOID

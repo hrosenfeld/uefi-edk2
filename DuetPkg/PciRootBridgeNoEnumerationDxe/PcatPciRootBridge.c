@@ -103,8 +103,8 @@ Returns:
     PrivateData->SubordinateBus   = (UINT32)PrimaryBusIndex;
 
     PrivateData->IoBase      = 0xffffffff;
-    PrivateData->MemBase     = 0xffffffff;
-    PrivateData->Mem32Base   = 0xffffffffffffffffULL;
+    PrivateData->MemBase     = 0xC0000000;
+    PrivateData->Mem32Base   = 0xC0000000ULL;
     PrivateData->Pmem32Base  = 0xffffffffffffffffULL;
     PrivateData->Mem64Base   = 0xffffffffffffffffULL;
     PrivateData->Pmem64Base  = 0xffffffffffffffffULL;

@@ -2226,7 +2226,7 @@ LegacyBiosInstallVgaRom (
     // Reconnect the EFI VGA driver.
     //
     gBS->ConnectController (VgaHandle, NULL, NULL, TRUE);
-    return EFI_DEVICE_ERROR;
+    return Status;
   }
 
   return EFI_SUCCESS;
